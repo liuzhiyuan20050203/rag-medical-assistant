@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+numpy==2.3.5
+faiss-cpu==1.13.1
+requests
+python-dotenv
+pymysql

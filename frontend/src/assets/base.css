@@ -1,0 +1,64 @@
+:root {
+  --page-bg: #f7fafc;
+  --surface: #ffffff;
+  --surface-soft: #f1f8fb;
+  --surface-tint: #eef9f6;
+  --border: #dbe7ef;
+  --border-strong: #b8d3e0;
+  --text-primary: #102033;
+  --text-secondary: #40556d;
+  --text-muted: #66778d;
+  --medical-blue: #2563eb;
+  --medical-blue-dark: #1d4ed8;
+  --clinical-green: #0f9f8e;
+  --pharmacy-teal: #0e7490;
+  --medicine-amber: #d97706;
+  --danger: #dc2626;
+  --shadow-sm: 0 8px 20px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 18px 44px rgba(15, 23, 42, 0.1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+html {
+  min-width: 320px;
+  background: var(--page-bg);
+}
+
+body {
+  min-height: 100vh;
+  color: var(--text-primary);
+  background: var(--page-bg);
+  font-family:
+    Inter,
+    "Microsoft YaHei",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Segoe UI",
+    Arial,
+    sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+}
+
+a {
+  color: inherit;
+}
