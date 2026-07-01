@@ -127,6 +127,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import { apiUrl } from '../api'
 
 const question = ref('')
 const answer = ref('')
@@ -161,7 +162,7 @@ const submitQuestion = async () => {
   feedbackMessage.value = ''
 
   try {
-    const response = await fetch('http://127.0.0.1:8000/api/chat', {
+    const response = await fetch(apiUrl('/api/chat'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -196,7 +197,7 @@ const submitFeedback = async () => {
   feedbackMessage.value = ''
 
   try {
-    const response = await fetch(`http://127.0.0.1:8000/api/history/${historyId.value}/feedback`, {
+    const response = await fetch(apiUrl(`/api/history/${historyId.value}/feedback`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -9,8 +9,11 @@ venv/
 env/
 
 # Local environment overrides
+.env
 .env.local
 .env.*.local
+backend/.env
+frontend/.env
 
 # Frontend dependencies and caches
 frontend/node_modules/
