@@ -95,6 +95,7 @@
 
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
+import { apiUrl } from '../api'
 
 const historyList = ref([])
 const loading = ref(false)
@@ -124,7 +125,7 @@ const loadHistory = async () => {
   loading.value = true
 
   try {
-    const response = await fetch('http://127.0.0.1:8000/api/history/list')
+    const response = await fetch(apiUrl('/api/history/list'))
     const data = await response.json()
 
     historyList.value = data.data || []
@@ -145,7 +146,7 @@ const clearHistory = async () => {
   }
 
   try {
-    await fetch('http://127.0.0.1:8000/api/history/clear', {
+    await fetch(apiUrl('/api/history/clear'), {
       method: 'POST',
     })
 
@@ -165,7 +166,7 @@ const submitFeedback = async (recordId) => {
   }
 
   try {
-    const response = await fetch(`http://127.0.0.1:8000/api/history/${recordId}/feedback`, {
+    const response = await fetch(apiUrl(`/api/history/${recordId}/feedback`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

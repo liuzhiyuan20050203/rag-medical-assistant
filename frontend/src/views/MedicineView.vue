@@ -121,6 +121,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import { apiUrl } from '../api'
 
 const keyword = ref('')
 const medicines = ref([])
@@ -163,7 +164,7 @@ const searchMedicine = async () => {
   message.value = ''
 
   try {
-    const response = await fetch('http://127.0.0.1:8000/api/medicine/search', {
+    const response = await fetch(apiUrl('/api/medicine/search'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

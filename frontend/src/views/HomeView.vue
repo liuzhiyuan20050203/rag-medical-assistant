@@ -142,6 +142,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { apiUrl } from '../api'
 
 const stats = ref({
   knowledge: {
@@ -192,7 +193,7 @@ const pharmacyHighlights = [
 
 const loadStats = async () => {
   try {
-    const response = await fetch('http://127.0.0.1:8000/api/stats/summary')
+    const response = await fetch(apiUrl('/api/stats/summary'))
     const data = await response.json()
 
     stats.value = data

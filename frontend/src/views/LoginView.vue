@@ -80,6 +80,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { apiUrl } from '../api'
 
 const router = useRouter()
 
@@ -107,7 +108,7 @@ const submitForm = async () => {
   message.value = ''
 
   try {
-    const response = await fetch(`http://127.0.0.1:8000/api/auth/${mode.value}`, {
+    const response = await fetch(apiUrl(`/api/auth/${mode.value}`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

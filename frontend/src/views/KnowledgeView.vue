@@ -112,6 +112,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { apiUrl } from '../api'
 
 const activeTab = ref('disease')
 const loading = ref(false)
@@ -124,15 +125,15 @@ const loadKnowledge = async () => {
   loading.value = true
 
   try {
-    const diseaseResponse = await fetch('http://127.0.0.1:8000/api/disease/list')
+    const diseaseResponse = await fetch(apiUrl('/api/disease/list'))
     const diseaseData = await diseaseResponse.json()
     diseases.value = diseaseData.data || []
 
-    const medicineResponse = await fetch('http://127.0.0.1:8000/api/medicine/list')
+    const medicineResponse = await fetch(apiUrl('/api/medicine/list'))
     const medicineData = await medicineResponse.json()
     medicines.value = medicineData.data || []
 
-    const warningResponse = await fetch('http://127.0.0.1:8000/api/warning/list')
+    const warningResponse = await fetch(apiUrl('/api/warning/list'))
     const warningData = await warningResponse.json()
     warningRules.value = warningData.data || []
   } catch (error) {

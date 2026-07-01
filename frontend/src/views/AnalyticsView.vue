@@ -189,6 +189,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { apiUrl } from '../api'
 
 const loading = ref(false)
 const message = ref('')
@@ -295,7 +296,7 @@ const loadAnalytics = async () => {
   message.value = ''
 
   try {
-    const response = await fetch('http://127.0.0.1:8000/api/analytics/summary')
+    const response = await fetch(apiUrl('/api/analytics/summary'))
     analytics.value = await response.json()
   } catch (error) {
     console.error(error)

@@ -280,6 +280,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { apiUrl } from '../api'
 
 const user = ref(null)
 const loading = ref(false)
@@ -391,13 +392,13 @@ const loadAdminData = async () => {
 
   try {
     const [knowledgeResponse, historyResponse, usersResponse] = await Promise.all([
-      fetch('http://127.0.0.1:8000/api/admin/knowledge', {
+      fetch(apiUrl('/api/admin/knowledge'), {
         headers: authHeaders(),
       }),
-      fetch('http://127.0.0.1:8000/api/admin/history', {
+      fetch(apiUrl('/api/admin/history'), {
         headers: authHeaders(),
       }),
-      fetch('http://127.0.0.1:8000/api/admin/users', {
+      fetch(apiUrl('/api/admin/users'), {
         headers: authHeaders(),
       }),
     ])
@@ -423,7 +424,7 @@ const createSystemUser = async () => {
   statusMessage.value = ''
 
   try {
-    const response = await fetch('http://127.0.0.1:8000/api/admin/users', {
+    const response = await fetch(apiUrl('/api/admin/users'), {
       method: 'POST',
       headers: authHeaders({
         'Content-Type': 'application/json',
@@ -456,7 +457,7 @@ const updateSystemUser = async (username) => {
   statusMessage.value = ''
 
   try {
-    const response = await fetch(`http://127.0.0.1:8000/api/admin/users/${encodeURIComponent(username)}`, {
+    const response = await fetch(apiUrl(`/api/admin/users/${encodeURIComponent(username)}`), {
       method: 'PUT',
       headers: authHeaders({
         'Content-Type': 'application/json',
@@ -483,7 +484,7 @@ const deleteSystemUser = async (username) => {
   statusMessage.value = ''
 
   try {
-    const response = await fetch(`http://127.0.0.1:8000/api/admin/users/${encodeURIComponent(username)}`, {
+    const response = await fetch(apiUrl(`/api/admin/users/${encodeURIComponent(username)}`), {
       method: 'DELETE',
       headers: authHeaders(),
     })
@@ -528,7 +529,7 @@ const uploadDoc = async (kind) => {
   target.message = ''
 
   try {
-    const response = await fetch(`http://127.0.0.1:8000/api/admin/upload/${kind}`, {
+    const response = await fetch(apiUrl(`/api/admin/upload/${kind}`), {
       method: 'POST',
       headers: authHeaders({
         'Content-Type': 'application/json',
@@ -560,7 +561,7 @@ const rebuildIndex = async () => {
   statusMessage.value = ''
 
   try {
-    const response = await fetch('http://127.0.0.1:8000/api/admin/vector/rebuild', {
+    const response = await fetch(apiUrl('/api/admin/vector/rebuild'), {
       method: 'POST',
       headers: authHeaders(),
     })
@@ -576,7 +577,7 @@ const rebuildIndex = async () => {
 
 const markError = async (recordId) => {
   try {
-    const response = await fetch(`http://127.0.0.1:8000/api/admin/history/${recordId}/mark-error`, {
+    const response = await fetch(apiUrl(`/api/admin/history/${recordId}/mark-error`), {
       method: 'POST',
       headers: authHeaders({
         'Content-Type': 'application/json',
