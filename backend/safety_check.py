@@ -1,29 +1,63 @@
-import json
+import os
 from pathlib import Path
 
-from storage import load_json_data
+import pymysql
+from dotenv import load_dotenv
 
 
 BASE_DIR = Path(__file__).resolve().parent
-RULE_FILE = BASE_DIR / "data" / "warning_rules.json"
+load_dotenv(BASE_DIR / ".env")
+
+
+def get_connection():
+    """
+    获取 MySQL 数据库连接
+    """
+    return pymysql.connect(
+        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
+        port=int(os.getenv("MYSQL_PORT", "3306")),
+        user=os.getenv("MYSQL_USER", "root"),
+        password=os.getenv("MYSQL_PASSWORD", ""),
+        database=os.getenv("MYSQL_DATABASE", "rag_medical"),
+        charset=os.getenv("MYSQL_CHARSET", "utf8mb4"),
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=True
+    )
 
 
 def load_warning_rules():
     """
-    读取危险症状规则库
+    读取危险症状规则库：从规范化 MySQL warning_rules 表读取。
+    为了兼容原来的逻辑，这里返回关键词字符串列表。
     """
-    return load_json_data(RULE_FILE, list)
+    sql = """
+        SELECT keyword
+        FROM warning_rules
+        ORDER BY id ASC
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+
+    return [
+        row.get("keyword", "").strip()
+        for row in rows
+        if row.get("keyword", "").strip()
+    ]
 
 
 def check_warning(question: str):
     """
-    检查用户输入中是否包含危险症状关键词
+    检查用户输入中是否包含危险症状关键词。
     """
+    question = question or ""
     rules = load_warning_rules()
     matched = []
 
     for rule in rules:
-        if rule in question:
+        if rule and rule in question:
             matched.append(rule)
 
     if matched:

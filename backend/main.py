@@ -438,7 +438,8 @@ def chat(data: dict):
         question=question,
         answer=answer,
         warning=warning_result,
-        retrieved_docs=retrieved_docs
+        retrieved_docs=retrieved_docs,
+        llm = llm_result
     )
 
     return {

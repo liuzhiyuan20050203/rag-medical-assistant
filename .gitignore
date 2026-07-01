@@ -9,11 +9,11 @@ venv/
 env/
 
 # Local environment overrides
-.env
+backend/.env
 .env.local
 .env.*.local
 backend/.env
-frontend/.env
+backend/.env
 
 # Frontend dependencies and caches
 frontend/node_modules/
@@ -31,3 +31,7 @@ pnpm-debug.log*
 .vscode/
 .DS_Store
 Thumbs.db
+
+.env
+backend/.env
+frontend/.env
