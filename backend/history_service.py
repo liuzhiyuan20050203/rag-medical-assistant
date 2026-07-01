@@ -1,100 +1,309 @@
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 
-from storage import is_database_enabled, load_json_data, save_json_data
+import pymysql
+from dotenv import load_dotenv
 
 
 BASE_DIR = Path(__file__).resolve().parent
-HISTORY_FILE = BASE_DIR / "data" / "history.json"
+load_dotenv(BASE_DIR / ".env", override=True)
+
+
+def get_connection():
+    """
+    获取 MySQL 数据库连接。
+    """
+    return pymysql.connect(
+        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
+        port=int(os.getenv("MYSQL_PORT", "3306")),
+        user=os.getenv("MYSQL_USER", "root"),
+        password=os.getenv("MYSQL_PASSWORD", ""),
+        database=os.getenv("MYSQL_DATABASE", "rag_medical"),
+        charset=os.getenv("MYSQL_CHARSET", "utf8mb4"),
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=True
+    )
+
+
+def json_dumps(data):
+    """
+    将 Python 对象安全转换为 JSON 字符串。
+    """
+    return json.dumps(data if data is not None else [], ensure_ascii=False)
+
+
+def json_loads(text, default=None):
+    """
+    将 JSON 字符串安全转换为 Python 对象。
+    """
+    if default is None:
+        default = []
+
+    if not text:
+        return default
+
+    try:
+        return json.loads(text)
+    except Exception:
+        return default
+
+
+def format_time(value):
+    """
+    格式化时间，兼容前端原来的 create_time 字符串格式。
+    """
+    if not value:
+        return ""
+
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+
+    return str(value)
+
+
+def parse_warning_info(warning):
+    """
+    从 warning 结果中提取是否危险和命中的关键词。
+    """
+    if not warning:
+        return 0, []
+
+    if isinstance(warning, dict):
+        has_warning = 1 if warning.get("has_warning") else 0
+        matched = warning.get("matched", [])
+        if isinstance(matched, str):
+            matched = [matched]
+        return has_warning, matched
+
+    return 0, []
+
+
+def parse_llm_info(llm):
+    """
+    从 llm 结果中提取大模型使用情况。
+    """
+    if not llm:
+        return 0, "", ""
+
+    if isinstance(llm, dict):
+        used = llm.get("used")
+        if used is None:
+            used = llm.get("success", False)
+
+        return (
+            1 if used else 0,
+            llm.get("provider", "") or "",
+            llm.get("model", "") or ""
+        )
+
+    return 0, "", ""
+
+
+def row_to_record(row):
+    """
+    将数据库行转换成前端原来使用的历史记录格式。
+    """
+    warning_keywords = json_loads(row.get("warning_keywords"), [])
+    retrieved_docs = json_loads(row.get("retrieved_docs"), [])
+
+    return {
+        "id": row.get("id"),
+        "user_id": row.get("user_id"),
+        "question": row.get("question", ""),
+        "answer": row.get("answer", ""),
+        "warning": {
+            "has_warning": bool(row.get("has_warning")),
+            "matched": warning_keywords,
+            "message": (
+                "你描述的症状中包含可能存在较高风险的情况："
+                + "、".join(warning_keywords)
+                + "。建议你及时就医或咨询专业医生。本系统仅提供健康信息参考，不能替代医生诊断。"
+                if row.get("has_warning") and warning_keywords
+                else ""
+            )
+        },
+        "retrieved_docs": retrieved_docs,
+        "llm": {
+            "used": bool(row.get("llm_used")),
+            "provider": row.get("llm_provider", "") or "",
+            "model": row.get("llm_model", "") or "",
+            "error": ""
+        },
+        "is_error": bool(row.get("is_error")),
+        "error_reason": row.get("error_reason", "") or "",
+        "satisfaction": row.get("satisfaction", "") or "",
+        "rating": row.get("rating", 0) or 0,
+        "feedback_text": row.get("feedback_text", "") or "",
+        "create_time": format_time(row.get("create_time")),
+        "review_time": format_time(row.get("review_time"))
+    }
 
 
 def ensure_history_file():
     """
-    确保历史记录文件存在
+    兼容旧代码：当前已改为 MySQL，不再需要创建 history.json。
     """
-    if is_database_enabled():
-        load_json_data(HISTORY_FILE, list)
-        return
-
-    if not HISTORY_FILE.exists():
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump([], f, ensure_ascii=False, indent=2)
+    return True
 
 
 def load_history():
     """
-    读取历史记录
+    兼容旧代码：读取历史记录。
     """
-    if is_database_enabled():
-        return load_json_data(HISTORY_FILE, list)
-
-    ensure_history_file()
-
-    with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    return get_history_list()
 
 
 def save_history(history_list):
     """
-    保存历史记录
+    兼容旧代码：用传入列表覆盖 chat_history。
+    一般情况下不建议主动调用，清空历史请使用 clear_history_records。
     """
-    if is_database_enabled():
-        save_json_data(HISTORY_FILE, history_list)
-        return
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM chat_history")
 
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(history_list, f, ensure_ascii=False, indent=2)
+            for item in reversed(history_list or []):
+                warning = item.get("warning") or {}
+                has_warning, warning_keywords = parse_warning_info(warning)
+
+                cursor.execute(
+                    """
+                    INSERT INTO chat_history
+                    (
+                        question, answer, has_warning, warning_keywords,
+                        retrieved_docs, llm_used, llm_provider, llm_model,
+                        is_error, error_reason, satisfaction, rating,
+                        feedback_text, create_time, review_time
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        item.get("question", ""),
+                        item.get("answer", ""),
+                        has_warning,
+                        json_dumps(warning_keywords),
+                        json_dumps(item.get("retrieved_docs", [])),
+                        1 if item.get("llm", {}).get("used") else 0,
+                        item.get("llm", {}).get("provider", ""),
+                        item.get("llm", {}).get("model", ""),
+                        1 if item.get("is_error") else 0,
+                        item.get("error_reason", ""),
+                        item.get("satisfaction", ""),
+                        item.get("rating", 0),
+                        item.get("feedback_text", ""),
+                        item.get("create_time") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        item.get("review_time") or None
+                    )
+                )
 
 
 def next_history_id(history_list):
+    """
+    兼容旧代码：MySQL 使用 AUTO_INCREMENT，不再手动生成 ID。
+    """
     if not history_list:
         return 1
     return max(item.get("id", 0) for item in history_list) + 1
 
 
-def add_history_record(question, answer, warning=None, retrieved_docs=None):
+def add_history_record(question, answer, warning=None, retrieved_docs=None, llm=None):
     """
-    新增一条问答历史记录
+    新增一条问答历史记录，写入 MySQL chat_history 表。
     """
-    history_list = load_history()
+    has_warning, warning_keywords = parse_warning_info(warning)
+    llm_used, llm_provider, llm_model = parse_llm_info(llm)
 
-    record = {
-        "id": next_history_id(history_list),
-        "question": question,
-        "answer": answer,
-        "warning": warning,
-        "retrieved_docs": retrieved_docs or [],
-        "is_error": False,
-        "error_reason": "",
-        "satisfaction": "",
-        "rating": 0,
-        "feedback_text": "",
-        "create_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    }
+    sql = """
+        INSERT INTO chat_history
+        (
+            question,
+            answer,
+            has_warning,
+            warning_keywords,
+            retrieved_docs,
+            llm_used,
+            llm_provider,
+            llm_model,
+            is_error,
+            error_reason,
+            satisfaction,
+            rating,
+            feedback_text
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, '', '', 0, '')
+    """
 
-    history_list.insert(0, record)
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                sql,
+                (
+                    question,
+                    answer,
+                    has_warning,
+                    json_dumps(warning_keywords),
+                    json_dumps(retrieved_docs or []),
+                    llm_used,
+                    llm_provider,
+                    llm_model
+                )
+            )
+            record_id = cursor.lastrowid
 
-    # 最多保存最近50条，避免文件过大
-    history_list = history_list[:50]
+    return get_history_by_id(record_id)
 
-    save_history(history_list)
 
-    return record
+def get_history_by_id(record_id: int):
+    """
+    根据 ID 获取单条历史记录。
+    """
+    sql = """
+        SELECT *
+        FROM chat_history
+        WHERE id = %s
+        LIMIT 1
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, (record_id,))
+            row = cursor.fetchone()
+
+    if not row:
+        return None
+
+    return row_to_record(row)
 
 
 def get_history_list():
     """
-    获取全部历史记录
+    获取全部历史记录，默认返回最近 50 条。
     """
-    return load_history()
+    sql = """
+        SELECT *
+        FROM chat_history
+        ORDER BY create_time DESC, id DESC
+        LIMIT 50
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+
+    return [row_to_record(row) for row in rows]
 
 
 def clear_history_records():
     """
-    清空历史记录
+    清空历史记录。
     """
-    save_history([])
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM chat_history")
+
     return True
 
 
@@ -102,16 +311,39 @@ def update_history_record(record_id: int, fields: dict):
     """
     更新指定历史记录的审核或反馈字段。
     """
-    history_list = load_history()
+    allowed_fields = {
+        "is_error",
+        "error_reason",
+        "satisfaction",
+        "rating",
+        "feedback_text"
+    }
 
-    for item in history_list:
-        if item.get("id") == record_id:
-            item.update(fields)
-            item["review_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            save_history(history_list)
-            return item
+    update_fields = {}
+    for key, value in (fields or {}).items():
+        if key in allowed_fields:
+            update_fields[key] = value
 
-    return None
+    if not update_fields:
+        return get_history_by_id(record_id)
+
+    update_fields["review_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    set_clause = ", ".join([f"{key} = %s" for key in update_fields.keys()])
+    values = list(update_fields.values())
+    values.append(record_id)
+
+    sql = f"""
+        UPDATE chat_history
+        SET {set_clause}
+        WHERE id = %s
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, values)
+
+    return get_history_by_id(record_id)
 
 
 def mark_history_error(record_id: int, reason: str = ""):
@@ -130,6 +362,9 @@ def mark_history_error(record_id: int, reason: str = ""):
 
 
 def rating_to_satisfaction(rating: int):
+    """
+    将评分转换为满意度文字。
+    """
     if rating >= 4:
         return "满意"
     if rating == 3:
@@ -171,6 +406,7 @@ def set_history_satisfaction(record_id: int, satisfaction: str):
         "一般": 3,
         "不满意": 1
     }
+
     rating = rating_map.get(satisfaction)
 
     if not rating:

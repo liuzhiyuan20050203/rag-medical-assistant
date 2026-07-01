@@ -1,17 +1,19 @@
 import json
+import os
 import re
 from pathlib import Path
 from datetime import datetime
 
-from storage import load_json_data, save_json_data
+import pymysql
+from dotenv import load_dotenv
 
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
-
-DISEASE_FILE = DATA_DIR / "diseases.json"
-MEDICINE_FILE = DATA_DIR / "medicines.json"
 UPLOAD_DIR = DATA_DIR / "uploads"
+
+load_dotenv(BASE_DIR / ".env")
+
 
 COMMON_SYMPTOMS = [
     "咳嗽", "流鼻涕", "鼻塞", "咽痛", "发热", "高热", "低热", "头痛", "头晕",
@@ -20,32 +22,173 @@ COMMON_SYMPTOMS = [
 ]
 
 
-def load_json(file_path):
+def get_connection():
     """
-    通用JSON读取方法
+    获取 MySQL 数据库连接
     """
-    return load_json_data(file_path, list)
+    return pymysql.connect(
+        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
+        port=int(os.getenv("MYSQL_PORT", "3306")),
+        user=os.getenv("MYSQL_USER", "root"),
+        password=os.getenv("MYSQL_PASSWORD", ""),
+        database=os.getenv("MYSQL_DATABASE", "rag_medical"),
+        charset=os.getenv("MYSQL_CHARSET", "utf8mb4"),
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=True
+    )
 
 
-def save_json(file_path, data):
+def split_symptoms(symptoms):
     """
-    通用JSON保存方法
+    将数据库中的症状字符串转换为列表，兼容前端和 RAG 模块。
     """
-    save_json_data(file_path, data)
+    if not symptoms:
+        return []
+
+    if isinstance(symptoms, list):
+        return symptoms
+
+    return [
+        item.strip()
+        for item in re.split(r"[、,，;；\s]+", str(symptoms))
+        if item.strip()
+    ]
+
+
+def join_symptoms(symptoms):
+    """
+    将症状列表转换为数据库存储字符串。
+    """
+    if not symptoms:
+        return ""
+
+    if isinstance(symptoms, list):
+        return "、".join([str(item).strip() for item in symptoms if str(item).strip()])
+
+    return str(symptoms).strip()
 
 
 def get_all_diseases():
     """
-    获取全部常见病知识
+    获取全部常见病知识：从规范化 MySQL diseases 表读取。
     """
-    return load_json(DISEASE_FILE)
+    sql = """
+        SELECT
+            id,
+            name,
+            category,
+            symptoms,
+            description,
+            care_advice,
+            medicine_notice,
+            warning
+        FROM diseases
+        ORDER BY id ASC
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+
+    result = []
+    for row in rows:
+        result.append({
+            "id": row.get("id"),
+            "name": row.get("name", ""),
+            "category": row.get("category", ""),
+            "symptoms": split_symptoms(row.get("symptoms", "")),
+            "description": row.get("description", ""),
+            "care_advice": row.get("care_advice", ""),
+            "medicine_notice": row.get("medicine_notice", ""),
+            "warning": row.get("warning", "")
+        })
+
+    return result
 
 
 def get_all_medicines():
     """
-    获取全部药品知识
+    获取全部药品知识：从规范化 MySQL medicines 表读取。
     """
-    return load_json(MEDICINE_FILE)
+    sql = """
+        SELECT
+            id,
+            name,
+            type,
+            usage_info,
+            notice,
+            contraindication,
+            side_effect
+        FROM medicines
+        ORDER BY id ASC
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+
+    result = []
+    for row in rows:
+        result.append({
+            "id": row.get("id"),
+            "name": row.get("name", ""),
+            "type": row.get("type", ""),
+            "usage": row.get("usage_info", ""),
+            "notice": row.get("notice", ""),
+            "contraindication": row.get("contraindication", ""),
+            "side_effect": row.get("side_effect", "")
+        })
+
+    return result
+
+
+def search_medicine(keyword: str):
+    """
+    根据药品名称、药品类别或适用情况查询药品信息。
+    """
+    keyword = (keyword or "").strip()
+
+    if not keyword:
+        return []
+
+    sql = """
+        SELECT
+            id,
+            name,
+            type,
+            usage_info,
+            notice,
+            contraindication,
+            side_effect
+        FROM medicines
+        WHERE name LIKE %s
+           OR type LIKE %s
+           OR usage_info LIKE %s
+        ORDER BY id ASC
+    """
+
+    like_keyword = f"%{keyword}%"
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, (like_keyword, like_keyword, like_keyword))
+            rows = cursor.fetchall()
+
+    result = []
+    for row in rows:
+        result.append({
+            "id": row.get("id"),
+            "name": row.get("name", ""),
+            "type": row.get("type", ""),
+            "usage": row.get("usage_info", ""),
+            "notice": row.get("notice", ""),
+            "contraindication": row.get("contraindication", ""),
+            "side_effect": row.get("side_effect", "")
+        })
+
+    return result
 
 
 def save_uploaded_source(file_name: str, content: str, doc_type: str):
@@ -65,22 +208,87 @@ def save_uploaded_source(file_name: str, content: str, doc_type: str):
 
 def append_diseases(records):
     """
-    批量追加疾病知识。
+    批量追加疾病知识：写入 MySQL diseases 表。
     """
-    diseases = get_all_diseases()
-    diseases.extend(records)
-    save_json(DISEASE_FILE, diseases)
-    return records
+    saved_records = []
+
+    sql = """
+        INSERT INTO diseases
+        (name, category, symptoms, description, care_advice, medicine_notice, warning)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            category = VALUES(category),
+            symptoms = VALUES(symptoms),
+            description = VALUES(description),
+            care_advice = VALUES(care_advice),
+            medicine_notice = VALUES(medicine_notice),
+            warning = VALUES(warning),
+            updated_at = CURRENT_TIMESTAMP
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            for item in records:
+                record = normalize_disease_record(item)
+                symptoms_text = join_symptoms(record.get("symptoms", []))
+
+                cursor.execute(
+                    sql,
+                    (
+                        record.get("name", ""),
+                        record.get("category", ""),
+                        symptoms_text,
+                        record.get("description", ""),
+                        record.get("care_advice", ""),
+                        record.get("medicine_notice", ""),
+                        record.get("warning", "")
+                    )
+                )
+
+                saved_records.append(record)
+
+    return saved_records
 
 
 def append_medicines(records):
     """
-    批量追加药品知识。
+    批量追加药品知识：写入 MySQL medicines 表。
     """
-    medicines = get_all_medicines()
-    medicines.extend(records)
-    save_json(MEDICINE_FILE, medicines)
-    return records
+    saved_records = []
+
+    sql = """
+        INSERT INTO medicines
+        (name, type, usage_info, notice, contraindication, side_effect)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            type = VALUES(type),
+            usage_info = VALUES(usage_info),
+            notice = VALUES(notice),
+            contraindication = VALUES(contraindication),
+            side_effect = VALUES(side_effect),
+            updated_at = CURRENT_TIMESTAMP
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            for item in records:
+                record = normalize_medicine_record(item)
+
+                cursor.execute(
+                    sql,
+                    (
+                        record.get("name", ""),
+                        record.get("type", ""),
+                        record.get("usage", ""),
+                        record.get("notice", ""),
+                        record.get("contraindication", ""),
+                        record.get("side_effect", "")
+                    )
+                )
+
+                saved_records.append(record)
+
+    return saved_records
 
 
 def trim_text(text: str, max_len: int = 180):
@@ -104,11 +312,15 @@ def extract_symptoms(content: str):
 
 def normalize_disease_record(item, fallback_name="管理员上传疾病知识"):
     """
-    将上传的JSON对象规整为系统疾病知识格式。
+    将上传的 JSON 对象规整为系统疾病知识格式。
     """
     symptoms = item.get("symptoms", [])
     if isinstance(symptoms, str):
-        symptoms = [part.strip() for part in re.split(r"[、,，;\s]+", symptoms) if part.strip()]
+        symptoms = [
+            part.strip()
+            for part in re.split(r"[、,，;\s]+", symptoms)
+            if part.strip()
+        ]
 
     return {
         "name": item.get("name") or fallback_name,
@@ -124,12 +336,12 @@ def normalize_disease_record(item, fallback_name="管理员上传疾病知识"):
 
 def normalize_medicine_record(item, fallback_name="管理员上传药品说明书"):
     """
-    将上传的JSON对象规整为系统药品知识格式。
+    将上传的 JSON 对象规整为系统药品知识格式。
     """
     return {
         "name": item.get("name") or fallback_name,
         "type": item.get("type") or item.get("category") or "上传说明书",
-        "usage": item.get("usage") or item.get("description") or item.get("content") or "",
+        "usage": item.get("usage") or item.get("usage_info") or item.get("description") or item.get("content") or "",
         "notice": item.get("notice") or "由管理员上传的药品说明书生成，请结合原说明书继续核对。",
         "contraindication": item.get("contraindication") or item.get("contraindications") or "请参考原药品说明书禁忌项。",
         "side_effect": item.get("side_effect") or item.get("adverse_reaction") or item.get("side_effects") or "请参考原药品说明书不良反应项。",
@@ -147,7 +359,7 @@ def extract_section(content: str, names, max_len=140):
 
 def parse_disease_upload(file_name: str, content: str):
     """
-    支持管理员上传JSON结构化疾病知识，或上传普通文本后自动生成一条疾病知识记录。
+    支持管理员上传 JSON 结构化疾病知识，或上传普通文本后自动生成一条疾病知识记录。
     """
     save_uploaded_source(file_name, content, "disease")
     fallback_name = first_title(file_name, content)
@@ -177,12 +389,13 @@ def parse_disease_upload(file_name: str, content: str):
         },
         fallback_name=fallback_name
     )
+
     return append_diseases([record])
 
 
 def parse_medicine_upload(file_name: str, content: str):
     """
-    支持管理员上传JSON结构化药品知识，或上传普通说明书文本后自动生成一条药品知识记录。
+    支持管理员上传 JSON 结构化药品知识，或上传普通说明书文本后自动生成一条药品知识记录。
     """
     save_uploaded_source(file_name, content, "medicine")
     fallback_name = first_title(file_name, content)
@@ -211,21 +424,5 @@ def parse_medicine_upload(file_name: str, content: str):
         },
         fallback_name=fallback_name
     )
+
     return append_medicines([record])
-
-
-def search_medicine(keyword: str):
-    """
-    根据药品名称或药品类别查询药品信息
-    """
-    medicines = get_all_medicines()
-    result = []
-
-    for item in medicines:
-        name = item.get("name", "")
-        medicine_type = item.get("type", "")
-
-        if keyword in name or keyword in medicine_type:
-            result.append(item)
-
-    return result
