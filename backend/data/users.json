@@ -1,0 +1,18 @@
+[
+  {
+    "username": "admin",
+    "password_hash": "d6d3e4fdfabc424425db7290471ed871b1ca15f4e819922f8ae8cca66086caaa",
+    "role": "admin",
+    "create_time": "2026-07-01 00:59:08",
+    "active": true,
+    "update_time": "2026-07-01 00:59:08"
+  },
+  {
+    "username": "xiaoliu",
+    "password_hash": "fa97121c185c69b77b43465207b7210664cf470ae4e4f4b21fb0cab6bd68d3e1",
+    "role": "user",
+    "create_time": "2026-07-01 01:12:24",
+    "active": true,
+    "update_time": "2026-07-01 01:12:24"
+  }
+]
