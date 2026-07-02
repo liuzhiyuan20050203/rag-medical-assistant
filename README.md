@@ -250,6 +250,7 @@ faiss-cpu==1.13.1
 requests
 python-dotenv
 pymysql
+Pillow
 ```
 
 ### 3. 配置大模型 API
@@ -377,6 +378,9 @@ http://localhost:5173
 | `/api/auth/login`      | POST | 用户登录          |
 | `/api/auth/register`   | POST | 用户注册          |
 | `/api/analytics/summary` | GET | 获取可视化分析数据 |
+| `/api/multimodal/image/analyze` | POST | 图片上传识别，返回视觉质量、标签和拍摄建议 |
+| `/api/multimodal/video/analyze` | POST | 视频关键帧识别，汇总关键帧视觉结果 |
+| `/api/multimodal/voice/analyze` | POST | 语音文本分析，返回危险提醒和RAG提示 |
 
 ---
 
