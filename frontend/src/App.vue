@@ -18,6 +18,7 @@
         <RouterLink to="/">首页</RouterLink>
         <RouterLink to="/chat">症状自查</RouterLink>
         <RouterLink to="/medicine">用药查询</RouterLink>
+        <RouterLink to="/multimodal">多模态识别</RouterLink>
         <RouterLink to="/knowledge">知识库</RouterLink>
         <RouterLink to="/history">历史记录</RouterLink>
         <RouterLink to="/analytics">可视化分析</RouterLink>

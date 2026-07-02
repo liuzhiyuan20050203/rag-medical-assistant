@@ -8,6 +8,7 @@ import HistoryView from '../views/HistoryView.vue'
 import LoginView from '../views/LoginView.vue'
 import AdminView from '../views/AdminView.vue'
 import AnalyticsView from '../views/AnalyticsView.vue'
+import MultimodalView from '../views/MultimodalView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -51,6 +52,11 @@ const router = createRouter({
       path: '/analytics',
       name: 'analytics',
       component: AnalyticsView,
+    },
+    {
+      path: '/multimodal',
+      name: 'multimodal',
+      component: MultimodalView,
     },
   ],
 })

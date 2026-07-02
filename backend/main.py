@@ -30,6 +30,11 @@ from auth_service import (
 )
 from analytics_service import add_search_log, build_analytics
 from storage import get_storage_status
+from multimodal_service import (
+    analyze_image_payload,
+    analyze_video_payload,
+    analyze_voice_transcript
+)
 
 app = FastAPI(title="基于RAG的常见病自查与用药指南系统")
 
@@ -165,6 +170,67 @@ def medicine_search(data: dict):
         "data": result,
         "message": "查询成功" if result else "暂未查询到相关药品信息。"
     }
+
+
+@app.post("/api/multimodal/image/analyze")
+def multimodal_image_analyze(data: dict):
+    """
+    图片识别分析。接收前端上传的Base64图片，返回基础视觉特征和拍摄建议。
+    """
+    image_data = data.get("image", "")
+
+    if not image_data:
+        return {
+            "success": False,
+            "message": "请上传图片。"
+        }
+
+    try:
+        return analyze_image_payload(
+            image_data=image_data,
+            file_name=data.get("file_name", ""),
+            note=data.get("note", "")
+        )
+    except ValueError as exc:
+        return {
+            "success": False,
+            "message": str(exc)
+        }
+
+
+@app.post("/api/multimodal/video/analyze")
+def multimodal_video_analyze(data: dict):
+    """
+    视频识别分析。前端抽取关键帧后提交，后端逐帧分析并汇总。
+    """
+    frames = data.get("frames", [])
+
+    if not frames:
+        return {
+            "success": False,
+            "message": "请上传视频并抽取至少一个关键帧。"
+        }
+
+    try:
+        return analyze_video_payload(
+            frames=frames,
+            file_name=data.get("file_name", ""),
+            note=data.get("note", ""),
+            duration=data.get("duration", 0)
+        )
+    except ValueError as exc:
+        return {
+            "success": False,
+            "message": str(exc)
+        }
+
+
+@app.post("/api/multimodal/voice/analyze")
+def multimodal_voice_analyze(data: dict):
+    """
+    语音输入分析。语音转文字由浏览器完成，后端负责危险症状和RAG提示。
+    """
+    return analyze_voice_transcript(data.get("transcript", ""))
 
 
 @app.get("/api/admin/knowledge")
