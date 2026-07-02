@@ -22,6 +22,7 @@
 | 向量检索    | FAISS              |
 | 向量计算    | NumPy              |
 | 大模型     | DeepSeek API       |
+| 多模态识别  | OpenAI-compatible 视觉模型接口 / 本地视觉统计 |
 | 数据存储    | 本地 JSON / 云端 MySQL |
 | 接口调用    | Fetch API、Requests |
 | 配置管理    | python-dotenv、Vite 环境变量 |
@@ -262,6 +263,12 @@ LLM_PROVIDER=deepseek
 DEEPSEEK_API_KEY=你的DeepSeek API Key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
+
+# 可选：多模态视觉模型，支持多数 OpenAI-compatible /chat/completions 视觉接口
+VISION_LLM_PROVIDER=custom
+VISION_LLM_API_KEY=你的多模态模型API Key
+VISION_LLM_BASE_URL=https://你的模型服务地址
+VISION_LLM_MODEL=你的视觉模型名称
 ```
 
 注意：`.env` 文件中包含真实 API Key，不应上传到 GitHub 或公开展示。

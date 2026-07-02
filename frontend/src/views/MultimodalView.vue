@@ -2,32 +2,17 @@
   <div class="page">
     <div class="page-title">
       <h2>多模态识别</h2>
-      <p>
-        支持图片上传、视频关键帧识别和语音症状输入。系统会返回基础视觉特征、拍摄质量提示、
-        危险症状提醒和可继续问诊的文本结果。
-      </p>
+      <p>上传图片、抽取视频关键帧，或用语音整理症状。页面只展示整理后的结论、依据和下一步建议。</p>
     </div>
 
     <div class="module-tabs">
-      <button
-        type="button"
-        :class="{ active: activeModule === 'image' }"
-        @click="activeModule = 'image'"
-      >
+      <button type="button" :class="{ active: activeModule === 'image' }" @click="activeModule = 'image'">
         图片识别
       </button>
-      <button
-        type="button"
-        :class="{ active: activeModule === 'video' }"
-        @click="activeModule = 'video'"
-      >
+      <button type="button" :class="{ active: activeModule === 'video' }" @click="activeModule = 'video'">
         视频识别
       </button>
-      <button
-        type="button"
-        :class="{ active: activeModule === 'voice' }"
-        @click="activeModule = 'voice'"
-      >
+      <button type="button" :class="{ active: activeModule === 'voice' }" @click="activeModule = 'voice'">
         语音输入
       </button>
     </div>
@@ -46,7 +31,7 @@
 
         <textarea
           v-model="imageNote"
-          placeholder="补充图片场景，例如：皮肤红疹、药盒说明书、咽喉不适等。"
+          placeholder="补充图片背景，例如：皮肤红疹三天、喉咙痛、药盒说明书、伤口变化等。"
         ></textarea>
 
         <button type="button" @click="analyzeImage" :disabled="imageLoading || !imagePreview">
@@ -59,7 +44,7 @@
         <div v-else class="empty-state">等待上传图片</div>
       </div>
 
-      <ResultBlock v-if="imageResult" title="图片识别结果" :result="imageResult" />
+      <AnswerBlock v-if="imageResult" title="图片识别结果" :result="imageResult" />
     </section>
 
     <section v-if="activeModule === 'video'" class="module-layout">
@@ -76,7 +61,7 @@
 
         <textarea
           v-model="videoNote"
-          placeholder="补充视频场景，例如：皮肤变化、药品包装、咽喉画面、症状动作等。"
+          placeholder="补充视频背景，例如：皮肤变化、药品包装、咽喉画面、症状动作等。"
         ></textarea>
 
         <div class="action-row">
@@ -84,7 +69,7 @@
             {{ frameLoading ? '抽帧中...' : '抽取关键帧' }}
           </button>
           <button type="button" @click="analyzeVideo" :disabled="videoLoading || framePreviews.length === 0">
-            {{ videoLoading ? '识别中...' : '分析视频' }}
+            {{ videoLoading ? '分析中...' : '分析视频' }}
           </button>
         </div>
       </div>
@@ -109,7 +94,7 @@
         </figure>
       </div>
 
-      <ResultBlock v-if="videoResult" title="视频识别结果" :result="videoResult" />
+      <AnswerBlock v-if="videoResult" title="视频识别结果" :result="videoResult" />
     </section>
 
     <section v-if="activeModule === 'voice'" class="voice-layout">
@@ -117,6 +102,10 @@
         <div class="panel-heading">
           <p>VOICE MODULE</p>
           <h3>语音症状输入</h3>
+        </div>
+
+        <div class="voice-status" :class="{ warning: voiceError }">
+          {{ voiceError || voiceStatus }}
         </div>
 
         <div class="voice-controls">
@@ -131,33 +120,19 @@
           </button>
         </div>
 
-        <p v-if="!speechSupported" class="support-warning">
-          当前浏览器不支持 Web Speech API，请使用 Chrome 或 Edge 体验语音输入。
-        </p>
-
         <textarea
           v-model="voiceText"
-          placeholder="语音识别结果会出现在这里，也可以手动修改后分析。"
+          placeholder="语音识别文本会出现在这里；也可以直接输入或修改后分析。"
         ></textarea>
 
         <div v-if="voiceInterim" class="interim-text">{{ voiceInterim }}</div>
 
-        <div class="action-row">
-          <button type="button" @click="analyzeVoice" :disabled="voiceLoading || !voiceText.trim()">
-            {{ voiceLoading ? '分析中...' : '分析语音文本' }}
-          </button>
-          <button type="button" @click="submitVoiceChat" :disabled="chatLoading || !voiceText.trim()">
-            {{ chatLoading ? '问诊中...' : '语音问诊' }}
-          </button>
-        </div>
+        <button type="button" @click="analyzeVoice" :disabled="voiceLoading || !voiceText.trim()">
+          {{ voiceLoading ? '分析中...' : '分析症状文本' }}
+        </button>
       </div>
 
-      <ResultBlock v-if="voiceResult" title="语音文本分析" :result="voiceResult" />
-
-      <div v-if="voiceChatAnswer" class="chat-result">
-        <h3>语音问诊结果</h3>
-        <pre>{{ voiceChatAnswer }}</pre>
-      </div>
+      <AnswerBlock v-if="voiceResult" title="语音文本分析" :result="voiceResult" />
     </section>
 
     <canvas ref="canvasRef" class="hidden-canvas"></canvas>
@@ -168,7 +143,14 @@
 import { computed, defineComponent, h, onBeforeUnmount, ref } from 'vue'
 import { apiUrl } from '../api'
 
-const ResultBlock = defineComponent({
+const toList = (value) => {
+  if (!value) {
+    return []
+  }
+  return Array.isArray(value) ? value.filter(Boolean) : [value]
+}
+
+const AnswerBlock = defineComponent({
   props: {
     title: {
       type: String,
@@ -180,13 +162,61 @@ const ResultBlock = defineComponent({
     },
   },
   setup(props) {
-    const valueText = computed(() => JSON.stringify(props.result, null, 2))
+    const answer = computed(() => props.result.answer || {})
 
-    return () =>
-      h('div', { class: 'result-block' }, [
-        h('h3', props.title),
-        h('pre', valueText.value),
+    const visitAdvice = (value) => {
+      if (!value.visit_advice) {
+        return null
+      }
+
+      const advice = value.visit_advice
+
+      return h('div', { class: 'visit-advice' }, [
+        h('h4', '建议就诊'),
+        h('div', { class: 'visit-grid' }, [
+          h('p', [h('strong', '处理级别：'), advice.urgency || '请结合症状观察']),
+          h('p', [h('strong', '建议时间：'), advice.timing || '症状持续或加重时就医']),
+          h('p', [h('strong', '建议科室：'), advice.department || '全科或普通内科']),
+          h('p', [h('strong', '原因：'), advice.reason || '需要结合症状和医生面诊判断']),
+        ]),
       ])
+    }
+
+    const section = (title, items) => {
+      const list = toList(items)
+      if (!list.length) {
+        return null
+      }
+
+      return h('div', { class: 'answer-section' }, [
+        h('h4', title),
+        h('ul', list.map((item) => h('li', String(item)))),
+      ])
+    }
+
+    return () => {
+      const value = answer.value
+      const risk = value.risk_level || '未知'
+
+      return h('article', { class: ['answer-card', props.result.success ? 'ok' : 'error'] }, [
+        h('div', { class: 'answer-heading' }, [
+          h('div', [
+            h('p', props.title),
+            h('h3', value.title || props.title),
+          ]),
+          h('span', { class: ['risk-pill', `risk-${risk}`] }, `风险：${risk}`),
+        ]),
+        h('p', { class: 'conclusion' }, value.conclusion || props.result.message || '暂未生成结论。'),
+        visitAdvice(value),
+        section('可能的病状方向', value.possible_conditions),
+        section('现在可以做什么', value.actions),
+        section('用药提醒', value.medication_reminder),
+        section('需要立刻或尽快就医的情况', value.red_flags),
+        section('系统依据', value.evidence),
+        section('还需要补充的信息', value.follow_up_questions),
+        h('p', { class: 'notice' }, value.medical_notice || props.result.medical_notice || '本结果不能替代医生诊断或药师指导。'),
+      ])
+    }
   },
 })
 
@@ -212,14 +242,18 @@ const videoResult = ref(null)
 const voiceText = ref('')
 const voiceInterim = ref('')
 const voiceResult = ref(null)
-const voiceChatAnswer = ref('')
 const voiceLoading = ref(false)
-const chatLoading = ref(false)
 const voiceListening = ref(false)
+const voiceStatus = ref('语音识别准备就绪')
+const voiceError = ref('')
 const recognition = ref(null)
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
 const speechSupported = Boolean(SpeechRecognition)
+
+if (!speechSupported) {
+  voiceStatus.value = '当前浏览器不支持语音识别，可直接输入文字后分析'
+}
 
 const readFileAsDataUrl = (file) =>
   new Promise((resolve, reject) => {
@@ -237,8 +271,20 @@ const postJson = async (path, body) => {
     },
     body: JSON.stringify(body),
   })
+  const data = await response.json().catch(() => ({
+    success: false,
+    message: '服务返回内容无法解析。',
+  }))
 
-  return response.json()
+  if (!response.ok) {
+    return {
+      success: false,
+      message: data.message || data.detail || `请求失败：${response.status}`,
+      answer: data.answer,
+    }
+  }
+
+  return data
 }
 
 const handleImageFile = async (event) => {
@@ -364,7 +410,7 @@ const extractVideoFrames = async () => {
   } catch (error) {
     videoResult.value = {
       success: false,
-      message: '视频关键帧抽取失败，请换一个视频文件再试。',
+      message: '视频关键帧抽取失败，请更换视频文件再试。',
     }
     console.error(error)
   } finally {
@@ -394,15 +440,40 @@ const analyzeVideo = async () => {
   }
 }
 
+const voiceErrorText = (error) => {
+  const messages = {
+    'not-allowed': '麦克风权限被拒绝，可改用文本输入。',
+    'no-speech': '没有识别到语音，请靠近麦克风后重试。',
+    network: '语音识别网络异常，可改用文本输入。',
+    'audio-capture': '没有检测到可用麦克风。',
+    aborted: '语音识别已停止。',
+  }
+
+  return messages[error] || '语音识别暂时不可用，可直接输入文字分析。'
+}
+
 const startVoice = () => {
   if (!speechSupported) {
+    voiceError.value = '当前浏览器不支持语音识别，可直接输入文字分析。'
     return
   }
+
+  if (voiceListening.value) {
+    return
+  }
+
+  voiceError.value = ''
+  voiceInterim.value = ''
 
   const instance = new SpeechRecognition()
   instance.lang = 'zh-CN'
   instance.continuous = true
   instance.interimResults = true
+
+  instance.onstart = () => {
+    voiceListening.value = true
+    voiceStatus.value = '正在识别语音'
+  }
 
   instance.onresult = (event) => {
     let finalText = ''
@@ -418,19 +489,35 @@ const startVoice = () => {
     }
 
     if (finalText) {
-      voiceText.value = `${voiceText.value}${finalText}`.trim()
+      const separator = voiceText.value && !/[，。！？；,.!?;]$/.test(voiceText.value) ? '，' : ''
+      voiceText.value = `${voiceText.value}${separator}${finalText}`.trim()
     }
     voiceInterim.value = interimText
+  }
+
+  instance.onerror = (event) => {
+    voiceError.value = voiceErrorText(event.error)
+    voiceListening.value = false
+    voiceStatus.value = '语音识别已停止'
   }
 
   instance.onend = () => {
     voiceListening.value = false
     voiceInterim.value = ''
+    if (!voiceError.value) {
+      voiceStatus.value = voiceText.value ? '语音识别完成，可修改后分析' : '语音识别已停止'
+    }
   }
 
   recognition.value = instance
-  voiceListening.value = true
-  instance.start()
+
+  try {
+    instance.start()
+  } catch (error) {
+    voiceError.value = '语音识别启动失败，可直接输入文字分析。'
+    voiceListening.value = false
+    console.error(error)
+  }
 }
 
 const stopVoice = () => {
@@ -442,7 +529,8 @@ const clearVoice = () => {
   voiceText.value = ''
   voiceInterim.value = ''
   voiceResult.value = null
-  voiceChatAnswer.value = ''
+  voiceError.value = ''
+  voiceStatus.value = speechSupported ? '语音识别准备就绪' : '当前浏览器不支持语音识别，可直接输入文字后分析'
 }
 
 const analyzeVoice = async () => {
@@ -461,23 +549,6 @@ const analyzeVoice = async () => {
     console.error(error)
   } finally {
     voiceLoading.value = false
-  }
-}
-
-const submitVoiceChat = async () => {
-  chatLoading.value = true
-  voiceChatAnswer.value = ''
-
-  try {
-    const data = await postJson('/api/chat', {
-      question: voiceText.value,
-    })
-    voiceChatAnswer.value = data.answer || '暂无回答。'
-  } catch (error) {
-    voiceChatAnswer.value = '语音问诊失败，请检查后端服务。'
-    console.error(error)
-  } finally {
-    chatLoading.value = false
   }
 }
 
@@ -501,6 +572,7 @@ onBeforeUnmount(() => {
 }
 
 .page-title p {
+  max-width: 920px;
   color: #64748b;
   line-height: 1.8;
 }
@@ -560,8 +632,8 @@ button.secondary {
 .tool-panel,
 .preview-panel,
 .video-area,
-.result-block,
-.chat-result {
+.answer-card,
+.metrics-panel {
   background: #ffffff;
   border: 1px solid #dbe6f0;
   border-radius: 8px;
@@ -584,8 +656,8 @@ button.secondary {
 }
 
 .panel-heading h3,
-.result-block h3,
-.chat-result h3 {
+.answer-card h3,
+.metrics-panel h3 {
   color: #111827;
   font-size: 22px;
   font-weight: 900;
@@ -681,30 +753,165 @@ textarea:focus {
   font-weight: 800;
 }
 
-.result-block,
-.chat-result {
+.answer-card,
+.metrics-panel {
   grid-column: 1 / -1;
   padding: 20px;
 }
 
-.result-block pre,
-.chat-result pre {
-  max-height: 460px;
-  margin-top: 12px;
-  overflow: auto;
-  color: #334155;
-  white-space: pre-wrap;
-  font-family: "Microsoft YaHei", Arial, sans-serif;
+.answer-card.error {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.answer-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.answer-heading p {
+  margin-bottom: 4px;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.risk-pill,
+.model-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.risk-低 {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.risk-中 {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.risk-高 {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.risk-未知 {
+  color: #475569;
+  background: #e2e8f0;
+}
+
+.conclusion {
+  color: #111827;
+  font-size: 18px;
+  font-weight: 800;
   line-height: 1.75;
 }
 
-.support-warning {
-  padding: 12px 14px;
-  color: #92400e;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
+.scene-line,
+.notice {
+  margin-top: 10px;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.visit-advice {
+  margin-top: 16px;
+  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid #dbe6f0;
+  border-radius: 8px;
+}
+
+.visit-advice h4 {
+  margin-bottom: 10px;
+  color: #111827;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.visit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.visit-grid p {
+  margin: 0;
+  color: #334155;
+  line-height: 1.7;
+}
+
+.visit-grid strong {
+  color: #111827;
+}
+
+.answer-section {
+  margin-top: 16px;
+}
+
+.answer-section h4 {
+  margin-bottom: 8px;
+  color: #334155;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.answer-section ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+  color: #1f2937;
+  line-height: 1.7;
+}
+
+.model-chip {
+  margin-top: 14px;
+  color: #155e75;
+  background: #cffafe;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.metrics-grid span {
+  padding: 10px 12px;
+  color: #334155;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   font-weight: 800;
+}
+
+.voice-status {
+  padding: 12px 14px;
+  color: #155e75;
+  background: #ecfeff;
+  border: 1px solid #a5f3fc;
+  border-radius: 8px;
+  font-weight: 800;
+  line-height: 1.6;
+}
+
+.voice-status.warning {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
 }
 
 .interim-text {
