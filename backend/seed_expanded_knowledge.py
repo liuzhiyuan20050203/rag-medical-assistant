@@ -1,0 +1,719 @@
+import os
+import pymysql
+from pathlib import Path
+from dotenv import load_dotenv
+
+
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env", override=True)
+
+
+def get_connection():
+    return pymysql.connect(
+        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
+        port=int(os.getenv("MYSQL_PORT", "3306")),
+        user=os.getenv("MYSQL_USER", "root"),
+        password=os.getenv("MYSQL_PASSWORD", ""),
+        database=os.getenv("MYSQL_DATABASE", "rag_medical"),
+        charset=os.getenv("MYSQL_CHARSET", "utf8mb4"),
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=True
+    )
+
+
+DISEASES = [
+    {
+        "name": "鼻炎",
+        "category": "耳鼻喉问题",
+        "symptoms": "鼻塞、流鼻涕、打喷嚏、鼻痒、嗅觉下降",
+        "description": "鼻炎常表现为鼻腔黏膜受到刺激后出现鼻塞、流涕、喷嚏等症状，可与过敏、感染、环境刺激等因素有关。",
+        "care_advice": "注意保持室内空气流通，减少粉尘、烟雾、冷空气等刺激，外出可适当佩戴口罩，避免频繁抠鼻。",
+        "medicine_notice": "鼻炎相关药物类型较多，使用滴鼻剂、喷鼻剂或抗过敏药前应阅读说明书，儿童、孕妇和老人应咨询医生或药师。",
+        "warning": "如果出现持续高热、脓性鼻涕明显、头面部疼痛加重、呼吸困难或症状长期不缓解，应及时就医。"
+    },
+    {
+        "name": "过敏性鼻炎",
+        "category": "耳鼻喉问题",
+        "symptoms": "打喷嚏、清水样鼻涕、鼻痒、鼻塞、眼痒",
+        "description": "过敏性鼻炎多与花粉、尘螨、动物毛屑等过敏原有关，常反复出现喷嚏、鼻痒和清水样鼻涕。",
+        "care_advice": "尽量远离明确过敏原，保持床品清洁，减少室内尘螨，花粉季外出后可清洗面部和鼻腔周围。",
+        "medicine_notice": "抗过敏药和鼻喷药应按说明书使用，不建议长期自行使用含激素类鼻喷药或多种药物叠加使用。",
+        "warning": "如果伴有喘息、呼吸困难、面唇肿胀或全身过敏反应，应及时就医。"
+    },
+    {
+        "name": "鼻窦炎",
+        "category": "耳鼻喉问题",
+        "symptoms": "鼻塞、黄绿色鼻涕、头痛、面部胀痛、嗅觉下降",
+        "description": "鼻窦炎可表现为鼻塞、脓性鼻涕、头面部胀痛等，可能与上呼吸道感染后鼻窦引流不畅有关。",
+        "care_advice": "注意休息和补充水分，保持鼻腔湿润，避免烟雾和刺激性气味，观察鼻涕颜色和头面部疼痛变化。",
+        "medicine_notice": "不建议自行使用抗生素，鼻腔冲洗、鼻喷药或其他药物应按说明书或医生建议使用。",
+        "warning": "如果出现高热不退、剧烈头痛、眼眶疼痛肿胀、视力异常或症状持续加重，应及时就医。"
+    },
+    {
+        "name": "扁桃体炎",
+        "category": "呼吸系统",
+        "symptoms": "咽痛、吞咽痛、发热、扁桃体肿大、乏力",
+        "description": "扁桃体炎常表现为咽痛、吞咽疼痛、发热和扁桃体肿大，可由感染或局部炎症刺激引起。",
+        "care_advice": "注意休息，多饮温水，避免辛辣刺激食物，保持口腔清洁，减少大声说话。",
+        "medicine_notice": "退热止痛或含片类药物应按说明书使用，不建议自行使用抗生素。",
+        "warning": "如果出现高热不退、吞咽困难明显、呼吸困难、张口困难或儿童精神差，应及时就医。"
+    },
+    {
+        "name": "急性支气管炎",
+        "category": "呼吸系统",
+        "symptoms": "咳嗽、咳痰、胸闷、低热、咽部不适",
+        "description": "急性支气管炎常见于上呼吸道感染后，表现为咳嗽、咳痰、胸部不适等，部分人可伴有低热。",
+        "care_advice": "注意休息，避免烟雾和冷空气刺激，保持空气湿润，适当补充水分，观察痰液颜色和呼吸情况。",
+        "medicine_notice": "止咳、祛痰类药物应根据症状按说明书使用，不建议自行使用抗生素或多种止咳药叠加。",
+        "warning": "如果出现呼吸困难、胸痛、高热不退、咳血或症状明显加重，应及时就医。"
+    },
+    {
+        "name": "咳嗽",
+        "category": "呼吸系统",
+        "symptoms": "干咳、咳痰、咽痒、胸闷、夜间咳嗽",
+        "description": "咳嗽是一种常见症状，可见于感冒、咽炎、支气管炎、过敏刺激等多种情况，需要结合伴随症状判断。",
+        "care_advice": "避免吸烟和二手烟，保持室内湿度，少吃辛辣刺激食物，多饮温水，观察是否伴随发热或呼吸困难。",
+        "medicine_notice": "止咳药、祛痰药应根据咳嗽类型谨慎选择，儿童、孕妇、老人应咨询医生或药师。",
+        "warning": "如果出现咳血、呼吸困难、胸痛、高热不退或咳嗽长期不缓解，应及时就医。"
+    },
+    {
+        "name": "发热",
+        "category": "全身症状",
+        "symptoms": "体温升高、畏寒、出汗、乏力、头痛",
+        "description": "发热是身体对感染、炎症或其他刺激的常见反应，可伴有畏寒、乏力、头痛等表现。",
+        "care_advice": "注意休息，补充水分，观察体温变化和伴随症状，避免过度捂汗。",
+        "medicine_notice": "退热药应按说明书使用，避免同时使用多种含相同成分的复方感冒药。",
+        "warning": "如果出现高热不退、意识模糊、抽搐、呼吸困难、儿童精神差或孕妇发热，应及时就医。"
+    },
+    {
+        "name": "胃酸反流",
+        "category": "消化系统",
+        "symptoms": "反酸、烧心、嗳气、胸口灼热、咽喉不适",
+        "description": "胃酸反流常表现为反酸、烧心、胸口灼热或咽喉不适，可能与饮食、作息和胃食管反流有关。",
+        "care_advice": "避免暴饮暴食，少吃辛辣油腻食物，饭后不要立即平躺，控制夜宵和浓茶咖啡摄入。",
+        "medicine_notice": "抗酸或抑酸类药物应按说明书使用，长期反复反酸不建议自行长期服药。",
+        "warning": "如果出现吞咽困难、呕血、黑便、体重明显下降或胸痛明显，应及时就医。"
+    },
+    {
+        "name": "消化不良",
+        "category": "消化系统",
+        "symptoms": "腹胀、嗳气、早饱、恶心、胃部不适",
+        "description": "消化不良常表现为饭后腹胀、嗳气、早饱、胃部不适等，可能与饮食不规律、进食过快或胃肠功能紊乱有关。",
+        "care_advice": "规律饮食，避免暴饮暴食，少吃油腻和刺激性食物，进食速度放慢，适当活动。",
+        "medicine_notice": "促消化或胃肠动力相关药物应按说明书使用，反复不适应咨询医生。",
+        "warning": "如果出现持续腹痛、呕血、黑便、体重下降、吞咽困难或症状加重，应及时就医。"
+    },
+    {
+        "name": "便秘",
+        "category": "消化系统",
+        "symptoms": "排便困难、大便干结、腹胀、排便次数减少、肛门不适",
+        "description": "便秘常表现为排便次数减少、排便费力或大便干结，可与饮食纤维不足、饮水少、运动少等因素有关。",
+        "care_advice": "增加饮水和膳食纤维摄入，适当运动，养成规律排便习惯，避免长期久坐。",
+        "medicine_notice": "通便类药物不建议长期自行使用，老人、孕妇、儿童或有基础病者应咨询医生或药师。",
+        "warning": "如果出现剧烈腹痛、呕吐、便血、黑便、体重下降或便秘突然明显加重，应及时就医。"
+    },
+    {
+        "name": "恶心呕吐",
+        "category": "消化系统",
+        "symptoms": "恶心、呕吐、反胃、食欲下降、乏力",
+        "description": "恶心呕吐可由饮食不洁、胃肠不适、晕车、感染或其他原因引起，需要结合腹痛、发热、腹泻等症状判断。",
+        "care_advice": "少量多次饮水，暂时选择清淡易消化食物，避免油腻和刺激性食物，观察呕吐次数和尿量。",
+        "medicine_notice": "止吐或胃肠药物应谨慎使用，儿童、孕妇、老人或频繁呕吐者应咨询医生。",
+        "warning": "如果出现持续呕吐、不能进食饮水、严重腹痛、意识异常、呕血或明显脱水，应及时就医。"
+    },
+    {
+        "name": "腹胀",
+        "category": "消化系统",
+        "symptoms": "腹部胀满、嗳气、排气增多、食欲下降、腹部不适",
+        "description": "腹胀常与进食过快、消化不良、肠道积气、饮食结构变化等有关。",
+        "care_advice": "避免暴饮暴食，少吃易产气食物，饭后适当活动，保持规律饮食和排便。",
+        "medicine_notice": "胃肠动力或助消化类药物应按说明书使用，长期反复腹胀不建议自行用药。",
+        "warning": "如果腹胀伴剧烈腹痛、呕吐、停止排气排便、便血或体重下降，应及时就医。"
+    },
+    {
+        "name": "口腔溃疡",
+        "category": "口腔问题",
+        "symptoms": "口腔疼痛、溃疡面、进食疼痛、口腔灼痛、局部红肿",
+        "description": "口腔溃疡常表现为口腔黏膜局部疼痛和浅表溃疡，可能与刺激、压力、睡眠不足或营养状态有关。",
+        "care_advice": "保持口腔清洁，避免辛辣、过烫和坚硬食物，注意休息和规律饮食。",
+        "medicine_notice": "口腔溃疡贴、含漱液或局部用药应按说明书使用，不建议长期自行使用激素类药物。",
+        "warning": "如果溃疡长期不愈、反复严重发作、伴发热或口腔大面积糜烂，应及时就医。"
+    },
+    {
+        "name": "皮肤瘙痒",
+        "category": "皮肤问题",
+        "symptoms": "皮肤痒、抓痕、红斑、干燥、脱屑",
+        "description": "皮肤瘙痒可由皮肤干燥、过敏、湿疹、蚊虫叮咬等多种原因引起。",
+        "care_advice": "避免搔抓，保持皮肤清洁和湿润，减少热水烫洗和刺激性洗护用品，穿宽松透气衣物。",
+        "medicine_notice": "止痒药、抗过敏药或外用药膏应按说明书使用，儿童、孕妇和大面积皮损者应咨询医生。",
+        "warning": "如果出现全身皮疹、面唇肿胀、呼吸困难、皮肤破溃感染或瘙痒持续加重，应及时就医。"
+    },
+    {
+        "name": "湿疹",
+        "category": "皮肤问题",
+        "symptoms": "红斑、瘙痒、丘疹、渗出、脱屑",
+        "description": "湿疹是一类常见皮肤炎症表现，可出现红斑、瘙痒、丘疹、脱屑或渗出，常反复发作。",
+        "care_advice": "避免搔抓和热水烫洗，注意保湿，减少接触刺激性洗涤剂和过敏原。",
+        "medicine_notice": "外用药膏种类较多，不建议自行长期使用激素类药膏，儿童或大面积皮损应咨询医生。",
+        "warning": "如果出现明显渗液、化脓、发热、皮损迅速扩大或儿童严重湿疹，应及时就医。"
+    },
+    {
+        "name": "荨麻疹",
+        "category": "皮肤过敏",
+        "symptoms": "风团、皮肤瘙痒、红斑、反复发作、局部肿胀",
+        "description": "荨麻疹常表现为突发风团和明显瘙痒，可与食物、药物、感染、冷热刺激或其他过敏因素有关。",
+        "care_advice": "记录可能诱因，避免搔抓和热水刺激，远离可疑过敏原，保持皮肤清洁。",
+        "medicine_notice": "抗过敏药应按说明书使用，不建议自行叠加多种抗过敏药。",
+        "warning": "如果出现呼吸困难、喉咙发紧、面唇肿胀、头晕或全身严重过敏反应，应立即就医。"
+    },
+    {
+        "name": "接触性皮炎",
+        "category": "皮肤过敏",
+        "symptoms": "红斑、瘙痒、水疱、刺痛、脱皮",
+        "description": "接触性皮炎常与皮肤接触某些刺激物或过敏物质有关，可出现红斑、瘙痒、水疱或脱皮。",
+        "care_advice": "尽快避免继续接触可疑物质，清水清洗局部，避免搔抓和刺激性洗护用品。",
+        "medicine_notice": "外用止痒或抗炎药物应按说明书使用，大面积或面部皮损应咨询医生。",
+        "warning": "如果皮损迅速扩大、出现感染、面部眼周明显肿胀或伴呼吸困难，应及时就医。"
+    },
+    {
+        "name": "痤疮",
+        "category": "皮肤问题",
+        "symptoms": "粉刺、丘疹、脓疱、面部出油、皮肤红肿",
+        "description": "痤疮常见于面部、胸背部，与毛囊皮脂腺堵塞、皮脂分泌和炎症有关。",
+        "care_advice": "保持皮肤清洁，避免挤压痘痘，少用厚重油性护肤品，规律作息。",
+        "medicine_notice": "外用祛痘药物可能刺激皮肤，应少量试用并按说明书使用，严重痤疮不建议自行乱用药。",
+        "warning": "如果出现大面积脓疱、明显疼痛、瘢痕形成或长期反复加重，应就诊皮肤科。"
+    },
+    {
+        "name": "蚊虫叮咬",
+        "category": "皮肤问题",
+        "symptoms": "局部红肿、瘙痒、丘疹、刺痛、抓痕",
+        "description": "蚊虫叮咬后常出现局部红肿和瘙痒，多数为局部皮肤反应。",
+        "care_advice": "避免搔抓，可冷敷缓解不适，保持局部清洁，防止抓破感染。",
+        "medicine_notice": "止痒外用药应按说明书使用，儿童用药需注意适用年龄和用法。",
+        "warning": "如果出现明显化脓、红肿范围扩大、发热、全身过敏或呼吸困难，应及时就医。"
+    },
+    {
+        "name": "足癣",
+        "category": "皮肤问题",
+        "symptoms": "脚痒、脱皮、水疱、脚趾缝糜烂、异味",
+        "description": "足癣常由真菌感染引起，表现为脚部瘙痒、脱皮、水疱或趾缝糜烂。",
+        "care_advice": "保持足部干燥，勤换袜子，鞋袜通风，避免共用拖鞋和毛巾。",
+        "medicine_notice": "抗真菌外用药应按说明书坚持使用，不建议症状稍缓解就立即停用。",
+        "warning": "如果出现明显破溃、化脓、疼痛加重、糖尿病患者足部感染，应及时就医。"
+    },
+    {
+        "name": "轻度烫伤",
+        "category": "皮肤损伤",
+        "symptoms": "局部红肿、疼痛、水疱、灼热感、皮肤发红",
+        "description": "轻度烫伤通常表现为局部红肿、疼痛或小水疱，常由热水、热油、蒸汽等造成。",
+        "care_advice": "应尽快用流动清水冲洗降温，保持局部清洁，不要随意挑破水疱，不要涂抹不明偏方。",
+        "medicine_notice": "外用烫伤药膏应按说明书使用，大面积或深部烫伤不适合自行处理。",
+        "warning": "如果烫伤面积较大、位于面部会阴手部、出现大水疱、皮肤发白发黑或儿童烫伤，应及时就医。"
+    },
+    {
+        "name": "偏头痛",
+        "category": "疼痛问题",
+        "symptoms": "一侧头痛、搏动性疼痛、恶心、畏光、畏声",
+        "description": "偏头痛常表现为反复发作的一侧或双侧头痛，可伴恶心、畏光、畏声等症状。",
+        "care_advice": "注意休息，避免熬夜、强光、噪音和已知诱因，记录头痛发作规律。",
+        "medicine_notice": "止痛类药物不建议频繁自行使用，反复头痛应咨询医生，避免药物过度使用导致头痛加重。",
+        "warning": "如果出现突发剧烈头痛、肢体无力、意识异常、视物异常或外伤后头痛，应及时就医。"
+    },
+    {
+        "name": "牙痛",
+        "category": "口腔问题",
+        "symptoms": "牙齿疼痛、牙龈肿痛、咬合痛、冷热刺激痛、面部肿胀",
+        "description": "牙痛可与龋齿、牙龈炎、牙髓炎、智齿冠周炎等有关，单靠止痛不能解决病因。",
+        "care_advice": "保持口腔清洁，避免过冷过热和过甜食物，疼痛明显时避免用患侧咀嚼。",
+        "medicine_notice": "止痛药只能暂时缓解疼痛，不建议自行使用抗生素，牙痛反复应看口腔科。",
+        "warning": "如果出现面部肿胀、张口困难、发热、吞咽困难或疼痛剧烈，应及时就医。"
+    },
+    {
+        "name": "肌肉酸痛",
+        "category": "疼痛问题",
+        "symptoms": "肌肉疼痛、酸胀、乏力、活动后加重、局部僵硬",
+        "description": "肌肉酸痛可见于运动后、劳累、感冒样症状或姿势不当等情况。",
+        "care_advice": "注意休息，避免继续过度运动，可适当热敷和轻柔拉伸，观察是否伴发热或乏力明显。",
+        "medicine_notice": "外用止痛药或口服止痛药应按说明书使用，有基础病或长期疼痛应咨询医生。",
+        "warning": "如果出现肌肉疼痛伴高热、尿色加深、明显无力、外伤后剧痛或持续加重，应及时就医。"
+    },
+    {
+        "name": "关节痛",
+        "category": "疼痛问题",
+        "symptoms": "关节疼痛、肿胀、活动受限、僵硬、局部发热",
+        "description": "关节痛可与劳损、外伤、炎症、感染或慢性关节问题有关，需要结合部位和伴随症状判断。",
+        "care_advice": "减少负重和剧烈活动，注意保暖，避免反复刺激疼痛关节，观察肿胀和活动受限情况。",
+        "medicine_notice": "止痛或外用药物应按说明书使用，长期关节痛不建议自行长期服药。",
+        "warning": "如果关节明显红肿热痛、不能活动、外伤后畸形、发热或疼痛持续加重，应及时就医。"
+    },
+    {
+        "name": "腰背痛",
+        "category": "疼痛问题",
+        "symptoms": "腰痛、背痛、活动受限、肌肉僵硬、久坐后加重",
+        "description": "腰背痛常与久坐、姿势不良、肌肉劳损、受凉或运动损伤有关。",
+        "care_advice": "避免久坐久站，注意坐姿，适当活动和拉伸，避免突然搬重物。",
+        "medicine_notice": "外用止痛药或口服止痛药应按说明书使用，反复或长期疼痛应咨询医生。",
+        "warning": "如果出现下肢麻木无力、大小便异常、外伤后疼痛、发热或疼痛夜间明显，应及时就医。"
+    },
+    {
+        "name": "痛经",
+        "category": "女性健康",
+        "symptoms": "下腹痛、腰酸、恶心、乏力、出冷汗",
+        "description": "痛经常表现为月经前后或经期下腹疼痛，可伴腰酸、恶心、乏力等。",
+        "care_advice": "注意保暖和休息，避免过度劳累，适当热敷下腹部，记录疼痛程度和月经情况。",
+        "medicine_notice": "止痛药应按说明书使用，胃病、肾功能异常或其他基础病人群应谨慎。",
+        "warning": "如果疼痛突然明显加重、月经异常、发热、晕厥或影响正常生活，应及时就医。"
+    },
+    {
+        "name": "眼疲劳",
+        "category": "眼部问题",
+        "symptoms": "眼干、眼涩、视物模糊、眼胀、流泪",
+        "description": "眼疲劳常与长时间看屏幕、用眼过度、睡眠不足或环境干燥有关。",
+        "care_advice": "减少连续用眼时间，注意休息，保持合适屏幕距离和光线，避免长时间熬夜看屏幕。",
+        "medicine_notice": "人工泪液等眼用产品应按说明书使用，不建议自行使用含抗生素或激素的眼药水。",
+        "warning": "如果出现明显眼痛、视力下降、眼外伤、畏光流泪严重或眼红持续不退，应及时就医。"
+    },
+    {
+        "name": "耳痛",
+        "category": "耳鼻喉问题",
+        "symptoms": "耳朵疼痛、耳闷、听力下降、耳鸣、耳道不适",
+        "description": "耳痛可与外耳道刺激、中耳炎、咽喉感染牵涉痛或耳部损伤有关。",
+        "care_advice": "避免频繁掏耳，保持耳道干燥，游泳或洗澡后注意耳部清洁，观察是否有流脓或听力下降。",
+        "medicine_notice": "耳滴药或止痛药应按说明书使用，耳膜情况不明时不要随意滴药。",
+        "warning": "如果出现耳流脓、听力明显下降、高热、眩晕、外伤后耳痛或儿童耳痛哭闹，应及时就医。"
+    },
+    {
+        "name": "失眠",
+        "category": "睡眠问题",
+        "symptoms": "入睡困难、易醒、早醒、多梦、白天疲劳",
+        "description": "失眠可表现为入睡困难、睡眠浅、早醒或白天疲劳，可能与压力、作息不规律、情绪紧张等有关。",
+        "care_advice": "保持规律作息，睡前减少手机和咖啡因摄入，营造安静舒适睡眠环境，避免长期熬夜。",
+        "medicine_notice": "不建议自行使用安眠药或镇静类药物，如失眠持续影响生活应咨询医生。",
+        "warning": "如果失眠伴明显焦虑抑郁、持续加重、出现自伤想法或严重影响工作学习，应及时就医。"
+    },
+    {
+        "name": "疲劳乏力",
+        "category": "全身症状",
+        "symptoms": "乏力、疲劳、精神差、头晕、注意力下降",
+        "description": "疲劳乏力可与睡眠不足、压力、感冒样症状、饮食不规律或其他身体问题有关。",
+        "care_advice": "保证睡眠，规律饮食，适当活动，避免连续熬夜和过度劳累，观察是否伴发热、体重变化等。",
+        "medicine_notice": "不建议自行长期服用补品或多种保健品，症状持续应查明原因。",
+        "warning": "如果乏力明显加重、伴胸闷胸痛、呼吸困难、晕厥、黑便或体重明显下降，应及时就医。"
+    },
+    {
+        "name": "中暑",
+        "category": "环境相关",
+        "symptoms": "头晕、乏力、口渴、出汗多、恶心",
+        "description": "中暑多发生在高温高湿环境或长时间暴晒后，轻者可出现头晕、乏力、口渴和恶心。",
+        "care_advice": "立即转移到阴凉通风处，补充水分，减少活动，适当降温，避免继续暴晒。",
+        "medicine_notice": "不建议自行乱用药物，重点是脱离高温环境和补液降温，老人、儿童和慢性病患者应更谨慎。",
+        "warning": "如果出现意识模糊、抽搐、体温明显升高、停止出汗或昏迷，应立即就医。"
+    },
+    {
+        "name": "晕车",
+        "category": "常见不适",
+        "symptoms": "恶心、头晕、呕吐、出冷汗、胃部不适",
+        "description": "晕车常与乘车、坐船、乘机时前庭刺激有关，可出现恶心、头晕、呕吐等。",
+        "care_advice": "乘车前避免过饱或空腹，尽量看远处，保持空气流通，减少低头看手机。",
+        "medicine_notice": "晕车药可能引起嗜睡，使用前应阅读说明书，驾驶或高空作业者应特别注意。",
+        "warning": "如果头晕呕吐持续不缓解、伴剧烈头痛、肢体无力或意识异常，应及时就医。"
+    },
+    {
+        "name": "低血糖样不适",
+        "category": "全身症状",
+        "symptoms": "心慌、出汗、手抖、饥饿感、头晕",
+        "description": "低血糖样不适可表现为心慌、出汗、手抖、头晕和饥饿感，常见于长时间未进食或体力消耗后。",
+        "care_advice": "如果意识清醒，可适当补充含糖食物或饮品，之后规律进餐，避免长时间空腹。",
+        "medicine_notice": "糖尿病患者或正在使用降糖药者出现类似症状，应按医生指导处理，不要自行调整药物。",
+        "warning": "如果出现意识模糊、抽搐、昏迷、反复发作或糖尿病患者症状严重，应及时就医。"
+    },
+    {
+        "name": "尿频尿急",
+        "category": "泌尿系统",
+        "symptoms": "尿频、尿急、尿痛、下腹不适、尿液异常",
+        "description": "尿频尿急可与饮水增多、膀胱刺激、泌尿系统感染等有关，需要结合尿痛、发热、腰痛判断。",
+        "care_advice": "适量饮水，注意个人卫生，避免憋尿，观察是否有尿痛、血尿或发热。",
+        "medicine_notice": "不建议自行使用抗生素，泌尿系统症状明显或反复应咨询医生。",
+        "warning": "如果出现发热、腰痛、血尿、孕妇尿痛或症状持续加重，应及时就医。"
+    }
+]
+
+
+MEDICINES = [
+    {
+        "name": "对乙酰氨基酚",
+        "type": "退热止痛类",
+        "usage_info": "常用于缓解发热、头痛、咽痛、肌肉酸痛等症状。",
+        "notice": "应严格按说明书使用，避免与其他含对乙酰氨基酚的复方感冒药重复使用。",
+        "contraindication": "对本品过敏者禁用，严重肝功能异常者、长期饮酒者或正在使用影响肝脏药物者应咨询医生。",
+        "side_effect": "过量使用可能导致严重肝损伤，少数人可能出现皮疹、恶心等反应。"
+    },
+    {
+        "name": "阿司匹林",
+        "type": "解热镇痛抗炎类",
+        "usage_info": "可用于部分疼痛、发热或抗血小板相关场景，但具体用途差异较大。",
+        "notice": "不建议自行长期使用，儿童、青少年、孕妇、胃病患者和正在使用抗凝药者应咨询医生。",
+        "contraindication": "对阿司匹林过敏者、活动性出血或消化道溃疡患者应避免使用。",
+        "side_effect": "可能引起胃部不适、出血风险增加、过敏反应等。"
+    },
+    {
+        "name": "右美沙芬",
+        "type": "镇咳类",
+        "usage_info": "常用于缓解干咳或刺激性咳嗽。",
+        "notice": "有痰明显时不宜单纯强行止咳，使用前应阅读说明书，儿童用药应谨慎。",
+        "contraindication": "对本品过敏者禁用，正在使用部分精神类药物者应咨询医生。",
+        "side_effect": "可能出现头晕、嗜睡、胃部不适等。"
+    },
+    {
+        "name": "氨溴索",
+        "type": "祛痰类",
+        "usage_info": "常用于痰液黏稠、不易咳出的情况。",
+        "notice": "应按说明书使用，咳嗽伴高热、气促、咳血时不应只自行用药。",
+        "contraindication": "对本品过敏者禁用，孕妇、哺乳期女性和儿童应咨询医生或药师。",
+        "side_effect": "可能出现恶心、胃部不适、皮疹等。"
+    },
+    {
+        "name": "乙酰半胱氨酸",
+        "type": "祛痰类",
+        "usage_info": "常用于痰液黏稠、排痰困难等情况。",
+        "notice": "哮喘患者或气道敏感者使用前应咨询医生，使用期间注意观察咳痰变化。",
+        "contraindication": "对本品过敏者禁用，特殊人群应咨询医生或药师。",
+        "side_effect": "可能出现恶心、呕吐、胃部不适、气味不适等。"
+    },
+    {
+        "name": "愈创甘油醚",
+        "type": "祛痰类",
+        "usage_info": "常用于帮助稀释痰液、促进排痰。",
+        "notice": "应按说明书使用，咳嗽长期不缓解或伴危险症状时应就医。",
+        "contraindication": "对本品过敏者禁用，儿童用药需注意适用年龄。",
+        "side_effect": "可能出现胃肠不适、恶心、头晕等。"
+    },
+    {
+        "name": "含片类药物",
+        "type": "咽部不适缓解类",
+        "usage_info": "常用于缓解咽痛、咽干、咽部异物感等不适。",
+        "notice": "含片不能替代病因治疗，含糖产品糖尿病患者应注意，儿童使用需防止误吸。",
+        "contraindication": "对成分过敏者禁用。",
+        "side_effect": "可能出现口腔刺激、过敏或胃部不适。"
+    },
+    {
+        "name": "伪麻黄碱复方制剂",
+        "type": "鼻塞缓解类",
+        "usage_info": "常用于缓解感冒或鼻炎相关鼻塞。",
+        "notice": "高血压、心脏病、甲状腺功能异常、前列腺问题患者使用前应咨询医生。",
+        "contraindication": "对本品成分过敏者禁用，特殊慢性病患者应谨慎。",
+        "side_effect": "可能出现心慌、失眠、口干、血压升高等。"
+    },
+    {
+        "name": "口服补液盐",
+        "type": "补液电解质类",
+        "usage_info": "常用于腹泻、呕吐后补充水分和电解质，帮助预防脱水。",
+        "notice": "应按说明书正确冲调，不要随意改变浓度，儿童和老人腹泻应密切观察脱水情况。",
+        "contraindication": "严重脱水、意识异常、持续呕吐不能饮水者不适合单纯依赖口服补液。",
+        "side_effect": "冲调不当可能影响电解质平衡，少数人可出现呕吐或胃部不适。"
+    },
+    {
+        "name": "双歧杆菌类益生菌",
+        "type": "肠道菌群调节类",
+        "usage_info": "常用于肠道菌群紊乱相关腹泻、腹胀等辅助调节。",
+        "notice": "应按说明书保存和使用，不要用过热水冲服，严重腹泻不应只依赖益生菌。",
+        "contraindication": "免疫功能严重低下者或特殊疾病患者应咨询医生。",
+        "side_effect": "少数人可能出现腹胀或胃肠不适。"
+    },
+    {
+        "name": "乳酸菌素",
+        "type": "肠道调节类",
+        "usage_info": "常用于消化不良、肠道功能紊乱相关不适的辅助调节。",
+        "notice": "应按说明书使用，不能替代严重腹泻、便血、持续腹痛等情况的就医处理。",
+        "contraindication": "对本品过敏者禁用。",
+        "side_effect": "少数人可能出现腹胀、便秘或胃肠不适。"
+    },
+    {
+        "name": "奥美拉唑",
+        "type": "抑酸类",
+        "usage_info": "常用于胃酸相关症状，如反酸、烧心、胃部不适等。",
+        "notice": "不建议长期自行使用，反复胃痛、黑便、吞咽困难或体重下降应及时就医。",
+        "contraindication": "对本品过敏者禁用，孕妇、哺乳期女性或长期用药者应咨询医生。",
+        "side_effect": "可能出现头痛、腹胀、恶心、便秘或腹泻等。"
+    },
+    {
+        "name": "法莫替丁",
+        "type": "抑酸类",
+        "usage_info": "常用于缓解胃酸过多、反酸、烧心等症状。",
+        "notice": "长期反复胃部不适不建议自行用药，应明确原因。",
+        "contraindication": "对本品过敏者禁用，肾功能异常者应咨询医生。",
+        "side_effect": "可能出现头晕、便秘、腹泻、皮疹等。"
+    },
+    {
+        "name": "多潘立酮",
+        "type": "胃动力类",
+        "usage_info": "常用于部分胃胀、恶心、嗳气等胃动力不足相关症状。",
+        "notice": "心脏病患者、正在使用影响心律药物者应咨询医生，不建议长期自行使用。",
+        "contraindication": "对本品过敏者、部分心律问题患者禁用或慎用。",
+        "side_effect": "可能出现口干、腹部不适、心悸等。"
+    },
+    {
+        "name": "乳果糖",
+        "type": "通便类",
+        "usage_info": "常用于缓解便秘。",
+        "notice": "应按说明书使用，增加饮水和膳食纤维更重要，不建议长期自行依赖通便药。",
+        "contraindication": "肠梗阻、严重腹痛原因不明者不宜自行使用。",
+        "side_effect": "可能出现腹胀、腹痛、腹泻等。"
+    },
+    {
+        "name": "开塞露",
+        "type": "外用通便类",
+        "usage_info": "常用于临时缓解排便困难。",
+        "notice": "不建议长期频繁使用，便秘反复应从饮食、运动和排便习惯调整。",
+        "contraindication": "肛门直肠出血、严重腹痛原因不明者应先就医。",
+        "side_effect": "可能出现局部刺激、腹部不适或依赖性使用问题。"
+    },
+    {
+        "name": "西替利嗪",
+        "type": "抗过敏类",
+        "usage_info": "常用于缓解过敏性鼻炎、荨麻疹、皮肤瘙痒等过敏相关症状。",
+        "notice": "可能引起嗜睡，驾驶、操作机械或学习考试前应注意个体反应。",
+        "contraindication": "对本品过敏者禁用，肾功能异常者、孕妇、哺乳期女性应咨询医生。",
+        "side_effect": "可能出现嗜睡、口干、头晕、乏力等。"
+    },
+    {
+        "name": "炉甘石洗剂",
+        "type": "外用止痒类",
+        "usage_info": "常用于缓解轻度皮肤瘙痒、痱子、蚊虫叮咬等局部不适。",
+        "notice": "仅供外用，避免接触眼睛、口腔和破溃皮肤，大面积皮损应咨询医生。",
+        "contraindication": "对成分过敏者禁用。",
+        "side_effect": "可能出现局部干燥、刺激或过敏。"
+    },
+    {
+        "name": "地奈德乳膏",
+        "type": "外用抗炎类",
+        "usage_info": "常用于部分炎症性皮肤病的短期外用治疗。",
+        "notice": "属于激素类外用药，不建议自行长期或大面积使用，面部、儿童使用应咨询医生。",
+        "contraindication": "皮肤感染未控制、对本品过敏者应避免使用。",
+        "side_effect": "长期或不当使用可能导致皮肤变薄、刺激、毛细血管扩张等。"
+    },
+    {
+        "name": "糠酸莫米松乳膏",
+        "type": "外用抗炎类",
+        "usage_info": "常用于部分湿疹、皮炎等炎症性皮肤问题的短期外用。",
+        "notice": "属于激素类外用药，不建议自行长期使用，儿童、面部和大面积皮损需谨慎。",
+        "contraindication": "对本品过敏者禁用，感染性皮损应先咨询医生。",
+        "side_effect": "长期不当使用可能出现皮肤萎缩、色素改变、局部刺激等。"
+    },
+    {
+        "name": "特比萘芬乳膏",
+        "type": "抗真菌外用类",
+        "usage_info": "常用于足癣、体癣等真菌感染相关皮肤问题。",
+        "notice": "应按说明书坚持使用，症状缓解后是否继续用药应参考说明书或医生建议。",
+        "contraindication": "对本品过敏者禁用。",
+        "side_effect": "可能出现局部刺激、发红、瘙痒或脱皮。"
+    },
+    {
+        "name": "红霉素软膏",
+        "type": "外用抗菌类",
+        "usage_info": "常用于部分轻度皮肤细菌感染或小面积皮肤破损相关情况。",
+        "notice": "不建议长期或大面积自行使用，感染明显、化脓或加重应就医。",
+        "contraindication": "对红霉素或相关成分过敏者禁用。",
+        "side_effect": "可能出现局部刺激、过敏或耐药相关问题。"
+    },
+    {
+        "name": "莫匹罗星软膏",
+        "type": "外用抗菌类",
+        "usage_info": "常用于部分局部细菌感染性皮肤问题。",
+        "notice": "应按说明书或医生建议使用，不建议用于不明确的皮疹或长期自行使用。",
+        "contraindication": "对本品过敏者禁用。",
+        "side_effect": "可能出现局部烧灼感、刺痛、瘙痒或过敏。"
+    },
+    {
+        "name": "碘伏",
+        "type": "皮肤消毒类",
+        "usage_info": "常用于小面积皮肤破损、擦伤等局部消毒。",
+        "notice": "仅供外用，避免进入眼睛和口腔，深部伤口、大面积烧伤或严重污染伤口应就医。",
+        "contraindication": "对碘制剂过敏者禁用，甲状腺疾病患者大面积使用应咨询医生。",
+        "side_effect": "可能出现局部刺激、过敏或皮肤着色。"
+    },
+    {
+        "name": "人工泪液",
+        "type": "眼部润滑类",
+        "usage_info": "常用于缓解眼干、眼涩、用眼疲劳等不适。",
+        "notice": "眼痛、视力下降、明显眼红或分泌物增多时不应只自行使用人工泪液。",
+        "contraindication": "对成分过敏者禁用。",
+        "side_effect": "可能出现短暂视物模糊、眼部刺激或过敏。"
+    },
+    {
+        "name": "氯化钠滴鼻液",
+        "type": "鼻腔湿润清洁类",
+        "usage_info": "常用于鼻腔干燥、鼻塞时辅助湿润和清洁鼻腔。",
+        "notice": "应注意产品适用年龄和使用方式，鼻出血频繁或鼻部疼痛明显应就医。",
+        "contraindication": "对成分过敏者禁用。",
+        "side_effect": "一般较少，可能出现短暂鼻腔刺激。"
+    },
+    {
+        "name": "鼻喷激素类药物",
+        "type": "鼻炎治疗类",
+        "usage_info": "常用于过敏性鼻炎等鼻部炎症相关症状。",
+        "notice": "不建议自行长期使用，应按说明书或医生建议使用，儿童使用更需谨慎。",
+        "contraindication": "鼻腔感染、鼻部手术或损伤后使用前应咨询医生。",
+        "side_effect": "可能出现鼻腔干燥、鼻出血、刺激感等。"
+    },
+    {
+        "name": "口腔溃疡贴",
+        "type": "口腔局部用药",
+        "usage_info": "常用于缓解口腔溃疡局部疼痛和刺激。",
+        "notice": "应按说明书使用，口腔溃疡长期不愈或反复严重发作应就医。",
+        "contraindication": "对成分过敏者禁用。",
+        "side_effect": "可能出现局部刺激、异物感或过敏。"
+    },
+    {
+        "name": "晕车药",
+        "type": "止晕止吐类",
+        "usage_info": "常用于预防或缓解晕车、晕船、晕机引起的恶心呕吐。",
+        "notice": "可能引起嗜睡，驾驶、操作机械、学习考试前应特别注意，儿童用药应看说明书。",
+        "contraindication": "对成分过敏者禁用，青光眼、前列腺问题或特殊慢性病患者应咨询医生。",
+        "side_effect": "可能出现嗜睡、口干、头晕、视物模糊等。"
+    },
+    {
+        "name": "创可贴",
+        "type": "伤口护理类",
+        "usage_info": "常用于小面积表浅擦伤、割伤后的临时保护。",
+        "notice": "使用前应清洁伤口，严重污染、深部伤口或动物咬伤不适合只贴创可贴。",
+        "contraindication": "对胶布或材料过敏者应避免使用。",
+        "side_effect": "可能出现局部闷湿、过敏、皮肤发红等。"
+    },
+    {
+        "name": "葡萄糖口服制剂",
+        "type": "能量补充类",
+        "usage_info": "常用于意识清醒情况下低血糖样不适的临时糖分补充。",
+        "notice": "糖尿病患者应按医生指导处理低血糖，不建议频繁自行补糖而不查原因。",
+        "contraindication": "对成分过敏者禁用，意识不清者不应经口喂食。",
+        "side_effect": "可能导致血糖波动，过量使用可引起胃肠不适。"
+    }
+]
+
+
+WARNING_RULES = [
+    {"keyword": "便血", "risk_level": "high", "advice": "便血可能提示消化道出血或其他疾病，应及时就医。"},
+    {"keyword": "严重脱水", "risk_level": "high", "advice": "严重脱水可能危及健康，尤其是儿童和老人，应及时就医。"},
+    {"keyword": "持续呕吐", "risk_level": "high", "advice": "持续呕吐可能导致脱水和电解质紊乱，应及时就医。"},
+    {"keyword": "不能进食饮水", "risk_level": "high", "advice": "不能进食饮水可能导致脱水或病情加重，应及时就医。"},
+    {"keyword": "昏迷", "risk_level": "critical", "advice": "昏迷属于紧急情况，应立即寻求急救。"},
+    {"keyword": "晕厥", "risk_level": "high", "advice": "晕厥可能与心脑血管、低血糖等风险有关，应及时就医。"},
+    {"keyword": "肢体无力", "risk_level": "high", "advice": "突发肢体无力可能与神经系统急症有关，应及时就医。"},
+    {"keyword": "口角歪斜", "risk_level": "high", "advice": "口角歪斜可能提示脑卒中等急症，应及时就医。"},
+    {"keyword": "言语不清", "risk_level": "high", "advice": "言语不清可能提示神经系统急症，应及时就医。"},
+    {"keyword": "视物模糊", "risk_level": "medium", "advice": "视物模糊如果突然出现或伴头痛、肢体无力，应及时就医。"},
+    {"keyword": "突发剧烈头痛", "risk_level": "high", "advice": "突发剧烈头痛可能提示严重风险，应及时就医。"},
+    {"keyword": "颈部僵硬", "risk_level": "high", "advice": "颈部僵硬伴发热或头痛时需要警惕，应及时就医。"},
+    {"keyword": "过敏性休克", "risk_level": "critical", "advice": "过敏性休克属于急症，应立即寻求急救。"},
+    {"keyword": "面唇肿胀", "risk_level": "high", "advice": "面唇肿胀可能与严重过敏有关，应及时就医。"},
+    {"keyword": "喉头水肿", "risk_level": "critical", "advice": "喉头水肿可能影响呼吸，应立即寻求急救。"},
+    {"keyword": "老人胸闷", "risk_level": "high", "advice": "老人胸闷可能与心肺疾病有关，应及时就医。"},
+    {"keyword": "尿血", "risk_level": "high", "advice": "尿血可能与泌尿系统疾病有关，应及时就医。"},
+    {"keyword": "持续高热", "risk_level": "high", "advice": "持续高热可能提示感染或其他严重情况，应及时就医。"}
+]
+
+
+def upsert_diseases(cursor):
+    sql = """
+        INSERT INTO diseases
+        (name, category, symptoms, description, care_advice, medicine_notice, warning)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            category = VALUES(category),
+            symptoms = VALUES(symptoms),
+            description = VALUES(description),
+            care_advice = VALUES(care_advice),
+            medicine_notice = VALUES(medicine_notice),
+            warning = VALUES(warning)
+    """
+
+    for item in DISEASES:
+        cursor.execute(
+            sql,
+            (
+                item["name"],
+                item["category"],
+                item["symptoms"],
+                item["description"],
+                item["care_advice"],
+                item["medicine_notice"],
+                item["warning"]
+            )
+        )
+
+
+def upsert_medicines(cursor):
+    sql = """
+        INSERT INTO medicines
+        (name, type, usage_info, notice, contraindication, side_effect)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            type = VALUES(type),
+            usage_info = VALUES(usage_info),
+            notice = VALUES(notice),
+            contraindication = VALUES(contraindication),
+            side_effect = VALUES(side_effect)
+    """
+
+    for item in MEDICINES:
+        cursor.execute(
+            sql,
+            (
+                item["name"],
+                item["type"],
+                item["usage_info"],
+                item["notice"],
+                item["contraindication"],
+                item["side_effect"]
+            )
+        )
+
+
+def upsert_warning_rules(cursor):
+    sql = """
+        INSERT INTO warning_rules
+        (keyword, risk_level, advice)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            risk_level = VALUES(risk_level),
+            advice = VALUES(advice)
+    """
+
+    for item in WARNING_RULES:
+        cursor.execute(
+            sql,
+            (
+                item["keyword"],
+                item["risk_level"],
+                item["advice"]
+            )
+        )
+
+
+def count_table(cursor, table_name):
+    cursor.execute(f"SELECT COUNT(*) AS total FROM {table_name}")
+    row = cursor.fetchone()
+    return row["total"]
+
+
+def main():
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            upsert_diseases(cursor)
+            upsert_medicines(cursor)
+            upsert_warning_rules(cursor)
+
+            disease_count = count_table(cursor, "diseases")
+            medicine_count = count_table(cursor, "medicines")
+            warning_count = count_table(cursor, "warning_rules")
+
+    print("[完成] 知识库扩展写入成功")
+    print(f"[统计] diseases 当前总数：{disease_count}")
+    print(f"[统计] medicines 当前总数：{medicine_count}")
+    print(f"[统计] warning_rules 当前总数：{warning_count}")
+    print("[提示] 接下来请重启后端或访问 /api/rag/init 重建 RAG 向量索引")
+
+
+if __name__ == "__main__":
+    main()
