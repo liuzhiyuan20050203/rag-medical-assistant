@@ -29,6 +29,7 @@ from auth_service import (
     user_from_token
 )
 from analytics_service import add_search_log, build_analytics
+from agent_service import run_health_agent
 from storage import get_storage_status
 
 app = FastAPI(title="基于RAG的常见病自查与用药指南系统")
@@ -380,6 +381,27 @@ def rag_search(data: dict):
         "data": results,
         "message": "检索成功"
     }
+
+@app.post("/api/agent/chat")
+def agent_chat(data: dict):
+    """
+    HealthAgent 智能问诊接口。
+
+    支持字段：
+    - question：用户文字问题
+    - text：兼容语音转文字后的文本
+    - image_result：后续图片识别模块传入的结构化结果
+    - user_id：登录用户ID，老年人免登录时可为空
+    """
+    question = data.get("question") or data.get("text") or ""
+    image_result = data.get("image_result")
+    user_id = data.get("user_id")
+
+    return run_health_agent(
+        text=question,
+        image_result=image_result,
+        user_id=user_id
+    )
 
 
 @app.post("/api/chat")
