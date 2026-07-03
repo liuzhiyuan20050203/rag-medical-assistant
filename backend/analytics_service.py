@@ -1,17 +1,12 @@
-import json
 import re
 from collections import Counter
-from pathlib import Path
 from datetime import datetime
 
+from db import ensure_normalized_schema, get_connection, parse_time
 from history_service import get_history_list
 from knowledge_service import get_all_diseases, get_all_medicines
 from safety_check import load_warning_rules
-from storage import is_database_enabled, load_json_data, save_json_data
 
-
-BASE_DIR = Path(__file__).resolve().parent
-SEARCH_LOG_FILE = BASE_DIR / "data" / "search_log.json"
 
 STOP_WORDS = {
     "我", "我的", "一下", "怎么办", "怎么", "什么", "可以", "没有", "还有",
@@ -20,42 +15,128 @@ STOP_WORDS = {
 
 
 def ensure_search_log():
-    if is_database_enabled():
-        load_json_data(SEARCH_LOG_FILE, list)
-        return
-
-    if not SEARCH_LOG_FILE.exists():
-        with open(SEARCH_LOG_FILE, "w", encoding="utf-8") as f:
-            json.dump([], f, ensure_ascii=False, indent=2)
+    ensure_normalized_schema()
 
 
 def load_search_logs():
-    if is_database_enabled():
-        return load_json_data(SEARCH_LOG_FILE, list)
+    ensure_normalized_schema()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, kind, keyword, create_time
+                FROM search_logs
+                ORDER BY create_time DESC, id DESC
+                LIMIT 200
+                """
+            )
+            logs = cursor.fetchall()
 
-    ensure_search_log()
-    with open(SEARCH_LOG_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+            if not logs:
+                return []
+
+            log_ids = [row["id"] for row in logs]
+            placeholders = ", ".join(["%s"] * len(log_ids))
+            cursor.execute(
+                f"""
+                SELECT search_log_id, title
+                FROM search_log_matches
+                WHERE search_log_id IN ({placeholders})
+                ORDER BY search_log_id ASC, sort_order ASC, id ASC
+                """,
+                log_ids,
+            )
+            match_rows = cursor.fetchall()
+
+    matches_by_log = {}
+    for row in match_rows:
+        matches_by_log.setdefault(row["search_log_id"], []).append(row["title"])
+
+    return [
+        {
+            "kind": row.get("kind", ""),
+            "keyword": row.get("keyword", ""),
+            "matched_titles": matches_by_log.get(row["id"], []),
+            "create_time": parse_date_time(row.get("create_time")),
+        }
+        for row in logs
+    ]
 
 
 def save_search_logs(logs):
-    if is_database_enabled():
-        save_json_data(SEARCH_LOG_FILE, logs)
-        return
+    ensure_normalized_schema()
+    with get_connection(autocommit=False) as conn:
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM search_logs")
+                for item in logs or []:
+                    insert_search_log(cursor, item)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
-    with open(SEARCH_LOG_FILE, "w", encoding="utf-8") as f:
-        json.dump(logs, f, ensure_ascii=False, indent=2)
+
+def parse_date_time(value):
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    return str(value or "")
+
+
+def insert_search_log(cursor, item):
+    cursor.execute(
+        """
+        INSERT INTO search_logs (kind, keyword, create_time)
+        VALUES (%s, %s, %s)
+        """,
+        (
+            item.get("kind", "") or "",
+            item.get("keyword", "") or "",
+            parse_time(item.get("create_time")) or datetime.now(),
+        ),
+    )
+    log_id = cursor.lastrowid
+    for index, title in enumerate(item.get("matched_titles", []) or [], start=1):
+        cursor.execute(
+            """
+            INSERT INTO search_log_matches (search_log_id, title, sort_order)
+            VALUES (%s, %s, %s)
+            """,
+            (log_id, str(title), index),
+        )
 
 
 def add_search_log(kind: str, keyword: str, matched_titles=None):
-    logs = load_search_logs()
-    logs.insert(0, {
-        "kind": kind,
-        "keyword": keyword,
-        "matched_titles": matched_titles or [],
-        "create_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    })
-    save_search_logs(logs[:200])
+    ensure_normalized_schema()
+    with get_connection(autocommit=False) as conn:
+        try:
+            with conn.cursor() as cursor:
+                insert_search_log(
+                    cursor,
+                    {
+                        "kind": kind,
+                        "keyword": keyword,
+                        "matched_titles": matched_titles or [],
+                        "create_time": datetime.now(),
+                    },
+                )
+                cursor.execute(
+                    """
+                    DELETE FROM search_logs
+                    WHERE id NOT IN (
+                        SELECT id FROM (
+                            SELECT id
+                            FROM search_logs
+                            ORDER BY create_time DESC, id DESC
+                            LIMIT 200
+                        ) recent_logs
+                    )
+                    """
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def top_items(counter: Counter, limit=10, key_name="name", value_name="count"):

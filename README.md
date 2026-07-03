@@ -4,7 +4,7 @@
 
 本项目是一个基于 RAG（Retrieval-Augmented Generation，检索增强生成）思想实现的常见病自查与用药指南系统。系统面向普通用户在日常生活中遇到的轻微常见症状，如咳嗽、流鼻涕、咽痛、腹泻、胃痛、皮肤瘙痒等，提供症状自查、用药信息查询、危险症状提醒、知识库浏览、问答历史记录和首页统计看板等功能。
 
-系统采用前后端分离架构，前端使用 Vue 3，后端使用 FastAPI。开发环境默认可以使用 `backend/data/*.json` 作为本地数据源；云端部署时支持切换到 MySQL，后端会将疾病、药品、历史记录、用户会话和统计日志写入 MySQL 的 `app_json_store` 表。RAG 检索模块使用 FAISS 实现，回答生成部分接入 DeepSeek 大模型。系统会先从知识库中检索相关疾病或药品资料，再将检索结果提供给大模型生成结构化回答，从而减少无依据回答，提高回答内容的可解释性。
+系统采用前后端分离架构，前端使用 Vue 3，后端使用 FastAPI。运行时数据统一写入规范化 MySQL 表：疾病分类、疾病症状、药品类型、用户、会话、搜索日志、问答历史、RAG 命中文档和数据库匹配字段均拆分为独立业务表；`backend/data/*.json` 仅作为首次初始化的种子数据。RAG 检索模块使用 FAISS 实现，回答生成部分接入 DeepSeek 大模型。系统会先从知识库中检索相关疾病或药品资料，再将检索结果提供给大模型生成结构化回答，从而减少无依据回答，提高回答内容的可解释性。
 
 本系统仅用于健康信息参考，不能替代医生诊断、药师指导或正规医疗服务。
 
@@ -23,7 +23,7 @@
 | 向量计算    | NumPy              |
 | 大模型     | DeepSeek API       |
 | 多模态识别  | OpenAI-compatible 视觉模型接口 / 本地视觉统计 |
-| 数据存储    | 本地 JSON / 云端 MySQL |
+| 数据存储    | 规范化 MySQL 表 / JSON 种子数据 |
 | 接口调用    | Fetch API、Requests |
 | 配置管理    | python-dotenv、Vite 环境变量 |
 
@@ -198,8 +198,10 @@ rag-medical-assistant/
 │   ├── history_service.py
 │   ├── analytics_service.py
 │   ├── auth_service.py
+│   ├── db.py
 │   ├── storage.py
-│   ├── migrate_json_to_mysql.py
+│   ├── complete_mysql_database.py
+│   ├── migrate_json_to_mysql.py  # 兼容入口，转调规范化迁移
 │   ├── llm_service.py
 │   ├── requirements.txt
 │   └── .env.example
@@ -273,32 +275,28 @@ VISION_LLM_MODEL=你的视觉模型名称
 
 注意：`.env` 文件中包含真实 API Key，不应上传到 GitHub 或公开展示。
 
-### 4. 配置数据存储
+### 4. 配置 MySQL 数据库
 
-默认不配置数据库时，系统使用 `backend/data/*.json`：
-
-```env
-DATABASE_URL=
-MYSQL_HOST=
-```
-
-云端部署推荐使用 MySQL，例如宝塔同机部署：
+后端运行依赖本地 MySQL；`backend/data/*.json` 只用于初始化导入。Navicat 本地数据库配置示例：
 
 ```env
-DATABASE_URL=
 MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3306
 MYSQL_USER=rag_medical
 MYSQL_PASSWORD=你的数据库密码
 MYSQL_DATABASE=rag_medical
 MYSQL_CHARSET=utf8mb4
-MYSQL_JSON_TABLE=app_json_store
+RAG_EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
+RAG_RERANK_MODEL=lexical
+RAG_RERANK_ENABLED=true
+RAG_CHUNK_MAX_CHARS=360
+RAG_CHUNK_OVERLAP=80
 ```
 
-首次启用 MySQL 时运行一次迁移：
+首次启用 MySQL 或需要补齐表结构/种子数据时运行：
 
 ```bash
-python migrate_json_to_mysql.py
+python complete_mysql_database.py
 ```
 
 更多宝塔/阿里云部署步骤见 [DEPLOY_DATABASE.md](DEPLOY_DATABASE.md)。
@@ -381,7 +379,7 @@ http://localhost:5173
 | `/api/history/clear`   | POST | 清空问答历史      |
 | `/api/llm/test`        | GET  | 测试大模型连接     |
 | `/api/stats/summary`   | GET  | 获取首页统计数据    |
-| `/api/storage/status`  | GET  | 查看当前 JSON/MySQL 存储状态 |
+| `/api/storage/status`  | GET  | 查看当前规范化 MySQL 存储状态 |
 | `/api/auth/login`      | POST | 用户登录          |
 | `/api/auth/register`   | POST | 用户注册          |
 | `/api/analytics/summary` | GET | 获取可视化分析数据 |
@@ -496,8 +494,8 @@ POST /api/medicine/search
 1. 后端和前端需要分别启动。
 2. 使用大模型功能前，需要在 `.env` 文件中配置 DeepSeek API Key。
 3. `.env` 文件不要公开，不要提交到代码仓库；本仓库只保留 `.env.example`。
-4. 启用 MySQL 后，`migrate_json_to_mysql.py` 只在首次部署或明确要覆盖数据时运行。
-5. 云端部署时不要开放 MySQL `3306` 到公网；后端和 MySQL 同机时使用 `127.0.0.1`。
+4. 初始化 MySQL 后，`complete_mysql_database.py` 可重复执行以补齐表结构和种子数据；旧 `migrate_json_to_mysql.py` 入口已转调同一套规范化迁移。
+5. 本地数据库不要开放 MySQL `3306` 到公网；后端和 MySQL 同机时使用 `127.0.0.1`。
 6. 如果大模型调用失败，系统会自动使用本地模板回答作为兜底。
 7. 本项目知识库规模较小，主要用于课程实训或项目演示。
 8. 本系统不提供医学诊断、处方建议或治疗方案。
@@ -513,14 +511,14 @@ POST /api/medicine/search
 5. 接入 DeepSeek 大模型，实现基于检索资料的自然语言回答生成。
 6. 设置危险症状规则库，增强系统安全性。
 7. 支持问答历史记录和首页统计看板。
-8. 支持本地 JSON 和云端 MySQL 两种存储方式，便于本地开发和服务器部署。
+8. 使用规范化 MySQL 表存储业务数据，保留 JSON 文件作为可审计的初始种子数据。
 
 ---
 
 ## 十二、后续优化方向
 
 1. 使用 sentence-transformers 等语义向量模型提升检索准确率。
-2. 将当前 MySQL JSON 数据块进一步拆分为更规范的业务表结构。
+2. 继续扩展后台管理模块，支持更多规范表的增删改查和审计。
 3. 增加后台管理模块，实现疾病和药品知识的增删改查。
 4. 增加用户登录和个人问答历史管理。
 5. 扩展知识库规模，增加更多常见疾病和药品。

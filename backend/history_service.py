@@ -1,55 +1,12 @@
-import json
-import os
-from pathlib import Path
 from datetime import datetime
 
-import pymysql
-from dotenv import load_dotenv
-
-
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env", override=True)
-
-_DATABASE_CONTEXT_COLUMN_READY = False
-
-
-def get_connection():
-    """
-    获取 MySQL 数据库连接。
-    """
-    return pymysql.connect(
-        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
-        port=int(os.getenv("MYSQL_PORT", "3306")),
-        user=os.getenv("MYSQL_USER", "root"),
-        password=os.getenv("MYSQL_PASSWORD", ""),
-        database=os.getenv("MYSQL_DATABASE", "rag_medical"),
-        charset=os.getenv("MYSQL_CHARSET", "utf8mb4"),
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=True
-    )
-
-
-def json_dumps(data):
-    """
-    将 Python 对象安全转换为 JSON 字符串。
-    """
-    return json.dumps(data if data is not None else [], ensure_ascii=False)
-
-
-def json_loads(text, default=None):
-    """
-    将 JSON 字符串安全转换为 Python 对象。
-    """
-    if default is None:
-        default = []
-
-    if not text:
-        return default
-
-    try:
-        return json.loads(text)
-    except Exception:
-        return default
+from db import (
+    ensure_normalized_schema,
+    get_connection,
+    parse_time,
+    replace_history_relations,
+    split_terms,
+)
 
 
 def default_database_context():
@@ -61,39 +18,26 @@ def default_database_context():
 
 
 def format_time(value):
-    """
-    格式化时间，兼容前端原来的 create_time 字符串格式。
-    """
     if not value:
         return ""
-
     if isinstance(value, datetime):
         return value.strftime("%Y-%m-%d %H:%M:%S")
-
     return str(value)
 
 
 def parse_warning_info(warning):
-    """
-    从 warning 结果中提取是否危险和命中的关键词。
-    """
     if not warning:
         return 0, []
 
     if isinstance(warning, dict):
         has_warning = 1 if warning.get("has_warning") else 0
         matched = warning.get("matched", [])
-        if isinstance(matched, str):
-            matched = [matched]
-        return has_warning, matched
+        return has_warning, split_terms(matched)
 
     return 0, []
 
 
 def parse_llm_info(llm):
-    """
-    从 llm 结果中提取大模型使用情况。
-    """
     if not llm:
         return 0, "", ""
 
@@ -111,36 +55,169 @@ def parse_llm_info(llm):
     return 0, "", ""
 
 
-def ensure_database_context_column():
-    """
-    兼容已有 chat_history 表：缺少 database_context 列时自动补上。
-    """
-    global _DATABASE_CONTEXT_COLUMN_READY
+def source_raw_from_db(cursor, source_table, source_id):
+    if not source_table or not source_id:
+        return {}
 
-    if _DATABASE_CONTEXT_COLUMN_READY:
-        return
+    if source_table == "diseases":
+        cursor.execute(
+            """
+            SELECT
+                d.id,
+                d.name,
+                COALESCE(c.name, '') AS category,
+                d.description,
+                d.care_advice,
+                d.medicine_notice,
+                d.warning
+            FROM diseases d
+            LEFT JOIN disease_categories c ON c.id = d.category_id
+            WHERE d.id = %s
+            LIMIT 1
+            """,
+            (source_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return {}
 
-    with get_connection() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'database_context'")
-            if not cursor.fetchone():
-                cursor.execute(
-                    """
-                    ALTER TABLE chat_history
-                    ADD COLUMN database_context LONGTEXT NULL AFTER retrieved_docs
-                    """
-                )
+        cursor.execute(
+            """
+            SELECT symptom
+            FROM disease_symptoms
+            WHERE disease_id = %s
+            ORDER BY sort_order ASC, id ASC
+            """,
+            (source_id,),
+        )
+        row["symptoms"] = [item["symptom"] for item in cursor.fetchall()]
+        return row
 
-    _DATABASE_CONTEXT_COLUMN_READY = True
+    if source_table == "medicines":
+        cursor.execute(
+            """
+            SELECT
+                m.id,
+                m.name,
+                COALESCE(t.name, '') AS type,
+                m.usage_info AS `usage`,
+                m.notice,
+                m.contraindication,
+                m.side_effect
+            FROM medicines m
+            LEFT JOIN medicine_types t ON t.id = m.type_id
+            WHERE m.id = %s
+            LIMIT 1
+            """,
+            (source_id,),
+        )
+        return cursor.fetchone() or {}
+
+    return {}
 
 
-def row_to_record(row):
-    """
-    将数据库行转换成前端原来使用的历史记录格式。
-    """
-    warning_keywords = json_loads(row.get("warning_keywords"), [])
-    retrieved_docs = json_loads(row.get("retrieved_docs"), [])
-    database_context = json_loads(row.get("database_context"), default_database_context())
+def load_warning_keywords(cursor, history_id):
+    cursor.execute(
+        """
+        SELECT keyword
+        FROM chat_history_warning_matches
+        WHERE history_id = %s
+        ORDER BY sort_order ASC, id ASC
+        """,
+        (history_id,),
+    )
+    return [row["keyword"] for row in cursor.fetchall()]
+
+
+def load_retrieved_docs(cursor, history_id):
+    cursor.execute(
+        """
+        SELECT doc_type, source_table, source_id, title, score, content
+        FROM chat_history_retrieved_docs
+        WHERE history_id = %s
+        ORDER BY sort_order ASC, id ASC
+        """,
+        (history_id,),
+    )
+    docs = []
+    for row in cursor.fetchall():
+        doc = {
+            "title": row.get("title", ""),
+            "doc_type": row.get("doc_type", ""),
+            "score": row.get("score"),
+            "content": row.get("content", "") or "",
+        }
+        raw = source_raw_from_db(cursor, row.get("source_table"), row.get("source_id"))
+        if raw:
+            doc["raw"] = raw
+        docs.append(doc)
+    return docs
+
+
+def load_database_context(cursor, history_id):
+    cursor.execute(
+        """
+        SELECT query_text, expanded_query, has_matches
+        FROM chat_history_contexts
+        WHERE history_id = %s
+        LIMIT 1
+        """,
+        (history_id,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return default_database_context()
+
+    context = {
+        "query": row.get("query_text", "") or "",
+        "expanded_query": row.get("expanded_query", "") or "",
+        "diseases": [],
+        "medicines": [],
+        "has_matches": bool(row.get("has_matches")),
+    }
+
+    cursor.execute(
+        """
+        SELECT id, doc_type, source_table, source_id, title, score
+        FROM chat_history_database_matches
+        WHERE history_id = %s
+        ORDER BY sort_order ASC, id ASC
+        """,
+        (history_id,),
+    )
+    matches = cursor.fetchall()
+
+    for match in matches:
+        cursor.execute(
+            """
+            SELECT matched_field
+            FROM chat_history_database_match_fields
+            WHERE match_id = %s
+            ORDER BY sort_order ASC, id ASC
+            """,
+            (match["id"],),
+        )
+        result = {
+            "doc_type": match.get("doc_type", ""),
+            "title": match.get("title", ""),
+            "score": match.get("score"),
+            "matched_fields": [item["matched_field"] for item in cursor.fetchall()],
+            "raw": source_raw_from_db(cursor, match.get("source_table"), match.get("source_id")),
+        }
+
+        if result["doc_type"] == "disease":
+            context["diseases"].append(result)
+        elif result["doc_type"] == "medicine":
+            context["medicines"].append(result)
+
+    context["has_matches"] = context["has_matches"] or bool(context["diseases"] or context["medicines"])
+    return context
+
+
+def row_to_record(cursor, row):
+    warning_keywords = load_warning_keywords(cursor, row.get("id"))
+    retrieved_docs = load_retrieved_docs(cursor, row.get("id"))
+    database_context = load_database_context(cursor, row.get("id"))
 
     return {
         "id": row.get("id"),
@@ -177,71 +254,67 @@ def row_to_record(row):
 
 
 def ensure_history_file():
-    """
-    兼容旧代码：当前已改为 MySQL，不再需要创建 history.json。
-    """
+    ensure_normalized_schema()
     return True
 
 
 def load_history():
-    """
-    兼容旧代码：读取历史记录。
-    """
     return get_history_list()
 
 
 def save_history(history_list):
-    """
-    兼容旧代码：用传入列表覆盖 chat_history。
-    一般情况下不建议主动调用，清空历史请使用 clear_history_records。
-    """
-    ensure_database_context_column()
+    ensure_normalized_schema()
+    with get_connection(autocommit=False) as conn:
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM chat_history")
 
-    with get_connection() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM chat_history")
+                for item in reversed(history_list or []):
+                    warning = item.get("warning") or {}
+                    has_warning, warning_keywords = parse_warning_info(warning)
+                    llm_used, llm_provider, llm_model = parse_llm_info(item.get("llm"))
 
-            for item in reversed(history_list or []):
-                warning = item.get("warning") or {}
-                has_warning, warning_keywords = parse_warning_info(warning)
-
-                cursor.execute(
-                    """
-                    INSERT INTO chat_history
-                    (
-                        question, answer, has_warning, warning_keywords,
-                        retrieved_docs, database_context,
-                        llm_used, llm_provider, llm_model,
-                        is_error, error_reason, satisfaction, rating,
-                        feedback_text, create_time, review_time
+                    cursor.execute(
+                        """
+                        INSERT INTO chat_history
+                        (
+                            question, answer, has_warning,
+                            llm_used, llm_provider, llm_model,
+                            is_error, error_reason, satisfaction, rating,
+                            feedback_text, create_time, review_time
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            item.get("question", ""),
+                            item.get("answer", ""),
+                            has_warning,
+                            llm_used,
+                            llm_provider,
+                            llm_model,
+                            1 if item.get("is_error") else 0,
+                            item.get("error_reason", ""),
+                            item.get("satisfaction", ""),
+                            item.get("rating", 0),
+                            item.get("feedback_text", ""),
+                            parse_time(item.get("create_time")) or datetime.now(),
+                            parse_time(item.get("review_time")),
+                        )
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        item.get("question", ""),
-                        item.get("answer", ""),
-                        has_warning,
-                        json_dumps(warning_keywords),
-                        json_dumps(item.get("retrieved_docs", [])),
-                        json_dumps(item.get("database_context", default_database_context())),
-                        1 if item.get("llm", {}).get("used") else 0,
-                        item.get("llm", {}).get("provider", ""),
-                        item.get("llm", {}).get("model", ""),
-                        1 if item.get("is_error") else 0,
-                        item.get("error_reason", ""),
-                        item.get("satisfaction", ""),
-                        item.get("rating", 0),
-                        item.get("feedback_text", ""),
-                        item.get("create_time") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        item.get("review_time") or None
+                    replace_history_relations(
+                        cursor,
+                        cursor.lastrowid,
+                        warning_keywords=warning_keywords,
+                        retrieved_docs=item.get("retrieved_docs", []),
+                        database_context=item.get("database_context", default_database_context()),
                     )
-                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def next_history_id(history_list):
-    """
-    兼容旧代码：MySQL 使用 AUTO_INCREMENT，不再手动生成 ID。
-    """
     if not history_list:
         return 1
     return max(item.get("id", 0) for item in history_list) + 1
@@ -255,100 +328,93 @@ def add_history_record(
     llm=None,
     database_context=None
 ):
-    """
-    新增一条问答历史记录，写入 MySQL chat_history 表。
-    """
     has_warning, warning_keywords = parse_warning_info(warning)
     llm_used, llm_provider, llm_model = parse_llm_info(llm)
-    ensure_database_context_column()
+    ensure_normalized_schema()
 
-    sql = """
-        INSERT INTO chat_history
-        (
-            question,
-            answer,
-            has_warning,
-            warning_keywords,
-            retrieved_docs,
-            database_context,
-            llm_used,
-            llm_provider,
-            llm_model,
-            is_error,
-            error_reason,
-            satisfaction,
-            rating,
-            feedback_text
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, '', '', 0, '')
-    """
-
-    with get_connection() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                sql,
-                (
-                    question,
-                    answer,
-                    has_warning,
-                    json_dumps(warning_keywords),
-                    json_dumps(retrieved_docs or []),
-                    json_dumps(database_context or default_database_context()),
-                    llm_used,
-                    llm_provider,
-                    llm_model
+    with get_connection(autocommit=False) as conn:
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO chat_history
+                    (
+                        question,
+                        answer,
+                        has_warning,
+                        llm_used,
+                        llm_provider,
+                        llm_model,
+                        is_error,
+                        error_reason,
+                        satisfaction,
+                        rating,
+                        feedback_text
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, 0, '', '', 0, '')
+                    """,
+                    (
+                        question,
+                        answer,
+                        has_warning,
+                        llm_used,
+                        llm_provider,
+                        llm_model
+                    )
                 )
-            )
-            record_id = cursor.lastrowid
+                record_id = cursor.lastrowid
+                replace_history_relations(
+                    cursor,
+                    record_id,
+                    warning_keywords=warning_keywords,
+                    retrieved_docs=retrieved_docs or [],
+                    database_context=database_context or default_database_context(),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     return get_history_by_id(record_id)
 
 
 def get_history_by_id(record_id: int):
-    """
-    根据 ID 获取单条历史记录。
-    """
-    sql = """
-        SELECT *
-        FROM chat_history
-        WHERE id = %s
-        LIMIT 1
-    """
-
+    ensure_normalized_schema()
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute(sql, (record_id,))
+            cursor.execute(
+                """
+                SELECT *
+                FROM chat_history
+                WHERE id = %s
+                LIMIT 1
+                """,
+                (record_id,),
+            )
             row = cursor.fetchone()
-
-    if not row:
-        return None
-
-    return row_to_record(row)
+            if not row:
+                return None
+            return row_to_record(cursor, row)
 
 
 def get_history_list():
-    """
-    获取全部历史记录，默认返回最近 50 条。
-    """
-    sql = """
-        SELECT *
-        FROM chat_history
-        ORDER BY create_time DESC, id DESC
-        LIMIT 50
-    """
-
+    ensure_normalized_schema()
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute(sql)
+            cursor.execute(
+                """
+                SELECT *
+                FROM chat_history
+                ORDER BY create_time DESC, id DESC
+                LIMIT 50
+                """
+            )
             rows = cursor.fetchall()
-
-    return [row_to_record(row) for row in rows]
+            return [row_to_record(cursor, row) for row in rows]
 
 
 def clear_history_records():
-    """
-    清空历史记录。
-    """
+    ensure_normalized_schema()
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("DELETE FROM chat_history")
@@ -357,9 +423,7 @@ def clear_history_records():
 
 
 def update_history_record(record_id: int, fields: dict):
-    """
-    更新指定历史记录的审核或反馈字段。
-    """
+    ensure_normalized_schema()
     allowed_fields = {
         "is_error",
         "error_reason",
@@ -376,29 +440,26 @@ def update_history_record(record_id: int, fields: dict):
     if not update_fields:
         return get_history_by_id(record_id)
 
-    update_fields["review_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    set_clause = ", ".join([f"{key} = %s" for key in update_fields.keys()])
+    update_fields["review_time"] = datetime.now()
+    set_clause = ", ".join([f"`{key}` = %s" for key in update_fields.keys()])
     values = list(update_fields.values())
     values.append(record_id)
 
-    sql = f"""
-        UPDATE chat_history
-        SET {set_clause}
-        WHERE id = %s
-    """
-
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute(sql, values)
+            cursor.execute(
+                f"""
+                UPDATE chat_history
+                SET {set_clause}
+                WHERE id = %s
+                """,
+                values,
+            )
 
     return get_history_by_id(record_id)
 
 
 def mark_history_error(record_id: int, reason: str = ""):
-    """
-    标记错误回答，供管理员后台和满意度统计使用。
-    """
     return update_history_record(
         record_id,
         {
@@ -411,9 +472,6 @@ def mark_history_error(record_id: int, reason: str = ""):
 
 
 def rating_to_satisfaction(rating: int):
-    """
-    将评分转换为满意度文字。
-    """
     if rating >= 4:
         return "满意"
     if rating == 3:
@@ -424,9 +482,6 @@ def rating_to_satisfaction(rating: int):
 
 
 def set_history_feedback(record_id: int, rating: int, feedback_text: str = ""):
-    """
-    设置用户星级评分和详细评价。
-    """
     try:
         rating = int(rating)
     except (TypeError, ValueError):
@@ -447,9 +502,6 @@ def set_history_feedback(record_id: int, rating: int, feedback_text: str = ""):
 
 
 def set_history_satisfaction(record_id: int, satisfaction: str):
-    """
-    兼容旧版三档满意度反馈。
-    """
     rating_map = {
         "满意": 5,
         "一般": 3,

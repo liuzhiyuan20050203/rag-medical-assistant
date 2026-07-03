@@ -1,0 +1,128 @@
+[
+  {
+    "id": "cold_cough_runny_nose",
+    "query": "咳嗽、流鼻涕、喉咙痛，像感冒一样怎么办？",
+    "expected_titles": ["普通感冒", "咽炎"],
+    "expected_answer_terms": ["咳嗽", "流鼻涕", "咽痛"],
+    "any_answer_terms": ["普通感冒", "咽炎"],
+    "notes": "呼吸道常见症状应召回感冒或咽炎。"
+  },
+  {
+    "id": "flu_high_fever_body_ache",
+    "query": "突然高热、头痛、肌肉酸痛、很乏力，需要注意什么？",
+    "expected_titles": ["流感样症状"],
+    "expected_answer_terms": ["高热", "肌肉酸痛", "及时就医"],
+    "notes": "高热和肌肉酸痛应召回流感样症状。"
+  },
+  {
+    "id": "diarrhea_stomach_pain",
+    "query": "肚子疼，还一直拉肚子，大便次数变多。",
+    "expected_titles": ["腹泻"],
+    "expected_answer_terms": ["腹泻", "补充水分"],
+    "notes": "消化道腹泻描述应召回腹泻。"
+  },
+  {
+    "id": "stomach_acid_reflux",
+    "query": "胃不舒服、反酸、烧心，吃完东西更明显。",
+    "expected_titles": ["胃痛", "消化不良"],
+    "expected_answer_terms": ["反酸", "烧心"],
+    "any_answer_terms": ["胃痛", "消化不良"],
+    "notes": "胃部不适和反酸烧心应召回胃痛或消化不良。"
+  },
+  {
+    "id": "skin_rash_itching",
+    "query": "皮肤起红疹，很痒，怀疑过敏。",
+    "expected_titles": ["皮肤过敏", "湿疹"],
+    "expected_answer_terms": ["皮肤", "瘙痒"],
+    "any_answer_terms": ["皮肤过敏", "湿疹"],
+    "notes": "皮肤红疹瘙痒应召回皮肤过敏或湿疹。"
+  },
+  {
+    "id": "headache_dizzy_tired",
+    "query": "头痛头晕，最近很疲劳，睡眠也不太好。",
+    "expected_titles": ["头痛"],
+    "expected_answer_terms": ["头痛", "休息"],
+    "notes": "头痛头晕应召回头痛相关记录。"
+  },
+  {
+    "id": "toothache_swollen_gum",
+    "query": "牙疼，牙龈有点肿，咬东西会痛。",
+    "expected_titles": ["牙痛"],
+    "expected_answer_terms": ["牙痛", "口腔"],
+    "notes": "牙痛和牙龈肿痛应召回牙痛。"
+  },
+  {
+    "id": "allergic_rhinitis",
+    "query": "经常打喷嚏、鼻痒、流鼻涕，遇到冷空气更明显。",
+    "expected_titles": ["鼻炎", "普通感冒"],
+    "expected_answer_terms": ["鼻", "流鼻涕"],
+    "any_answer_terms": ["鼻炎", "普通感冒"],
+    "notes": "鼻炎样症状应召回鼻炎或普通感冒。"
+  },
+  {
+    "id": "ibuprofen_fever_pain",
+    "query": "发热和头痛时能不能了解一下布洛芬的注意事项？",
+    "expected_titles": ["布洛芬"],
+    "expected_answer_terms": ["布洛芬", "注意事项"],
+    "notes": "明确药名应召回对应药品资料。"
+  },
+  {
+    "id": "paracetamol_duplicate_cold_medicine",
+    "query": "对乙酰氨基酚退热时，能不能和复方感冒药一起吃？",
+    "expected_titles": ["对乙酰氨基酚"],
+    "expected_answer_terms": ["对乙酰氨基酚", "重复使用"],
+    "notes": "对乙酰氨基酚应提示避免和同成分复方药重复。"
+  },
+  {
+    "id": "allergy_antihistamine",
+    "query": "过敏性鼻炎和皮肤瘙痒，想查抗过敏药。",
+    "expected_titles": ["氯雷他定", "西替利嗪"],
+    "expected_answer_terms": ["抗过敏"],
+    "any_answer_terms": ["氯雷他定", "西替利嗪"],
+    "notes": "抗过敏场景应召回抗组胺药资料。"
+  },
+  {
+    "id": "oral_rehydration_diarrhea",
+    "query": "腹泻后担心脱水，想了解补液相关药品。",
+    "expected_titles": ["口服补液盐"],
+    "expected_answer_terms": ["腹泻", "补液"],
+    "notes": "腹泻补液场景应召回口服补液盐。"
+  },
+  {
+    "id": "montmorillonite_diarrhea",
+    "query": "一直拉肚子，想了解蒙脱石散有什么注意事项。",
+    "expected_titles": ["蒙脱石散"],
+    "expected_answer_terms": ["蒙脱石散", "腹泻"],
+    "notes": "明确止泻药名应召回蒙脱石散。"
+  },
+  {
+    "id": "throat_lozenge_sore_throat",
+    "query": "咽干咽痛，想查咽喉含片能不能缓解。",
+    "expected_titles": ["咽喉含片", "咽炎"],
+    "expected_answer_terms": ["咽痛"],
+    "any_answer_terms": ["咽喉含片", "咽炎"],
+    "notes": "咽痛应召回咽炎或咽喉含片。"
+  },
+  {
+    "id": "calamine_itchy_rash",
+    "query": "轻微皮疹很痒，想了解炉甘石洗剂是不是外用。",
+    "expected_titles": ["炉甘石洗剂"],
+    "expected_answer_terms": ["炉甘石洗剂", "外用"],
+    "notes": "外用止痒场景应召回炉甘石洗剂。"
+  },
+  {
+    "id": "antacid_reflux",
+    "query": "反酸烧心胃部不适，想查铝碳酸镁的注意事项。",
+    "expected_titles": ["铝碳酸镁"],
+    "expected_answer_terms": ["铝碳酸镁", "反酸"],
+    "notes": "胃酸相关症状应召回铝碳酸镁。"
+  },
+  {
+    "id": "danger_chest_pain_breathless",
+    "query": "胸痛而且喘不上气，是否需要马上处理？",
+    "expected_titles": [],
+    "expected_doc_types": ["warning_rule"],
+    "expected_answer_terms": ["胸痛", "及时就医"],
+    "notes": "危险症状问题应优先召回 warning_rules 中的红旗症状规则，实际聊天接口也会优先触发危险提醒。"
+  }
+]
