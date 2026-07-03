@@ -171,6 +171,10 @@
           <span class="score">相似度：{{ doc.score.toFixed(4) }}</span>
         </div>
 
+        <div v-if="doc.citation || doc.source" class="citation">
+          来源：{{ doc.citation || (doc.source && doc.source.label) }}
+        </div>
+
         <p class="doc-content">{{ doc.content }}</p>
       </div>
     </div>
@@ -466,6 +470,14 @@ pre {
 .score {
   font-size: 13px;
   color: #6b7280;
+}
+
+.citation {
+  margin-bottom: 8px;
+  color: #0f766e;
+  font-size: 13px;
+  line-height: 1.6;
+  word-break: break-word;
 }
 
 .doc-content {

@@ -14,7 +14,11 @@ from rag_service import (
     search_knowledge,
     filter_answer_docs,
     build_simple_answer,
-    init_vector_store
+    init_vector_store,
+    get_vector_store_status,
+    evaluate_retrieval,
+    collect_citations,
+    append_citations_to_answer
 )
 from database_context_service import search_database_context
 from history_service import (
@@ -323,7 +327,7 @@ def admin_rebuild_vector(_admin: dict = Depends(require_admin)):
     """
     重建RAG向量索引。
     """
-    result = init_vector_store()
+    result = init_vector_store(force_rebuild=True)
 
     return {
         "success": True,
@@ -437,6 +441,25 @@ def rag_init():
     }
 
 
+@app.get("/api/rag/status")
+def rag_status():
+    """
+    查看当前 RAG 语义索引和持久化状态。
+    """
+    return get_vector_store_status()
+
+
+@app.post("/api/rag/evaluate")
+def rag_evaluate(data: dict):
+    """
+    使用 backend/data/rag_eval_cases.json 中的标注用例评估召回。
+    """
+    return evaluate_retrieval(
+        top_k=data.get("top_k", 5),
+        eval_file=data.get("eval_file") or None
+    )
+
+
 @app.post("/api/rag/search")
 def rag_search(data: dict):
     """
@@ -464,12 +487,14 @@ def rag_search(data: dict):
         disease_limit=top_k,
         medicine_limit=top_k
     )
+    citations = collect_citations(results, database_context)
 
     return {
         "question": question,
         "count": len(results),
         "data": results,
         "database_context": database_context,
+        "citations": citations,
         "message": "检索成功"
     }
 
@@ -550,6 +575,9 @@ def chat(data: dict):
     else:
         answer = fallback_answer
 
+    citations = collect_citations(retrieved_docs, database_context)
+    answer = append_citations_to_answer(answer, citations)
+
     # 第六步：保存问答历史
     record = add_history_record(
         question=question,
@@ -566,6 +594,7 @@ def chat(data: dict):
         "warning": warning_result,
         "retrieved_docs": retrieved_docs,
         "database_context": database_context,
+        "citations": citations,
         "history_id": record.get("id"),
         "llm": {
             "used": llm_result["success"],

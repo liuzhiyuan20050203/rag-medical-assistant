@@ -26,6 +26,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Generated RAG vector indexes
+backend/data/rag_index/
+
 # IDE and OS
 .idea/
 .vscode/

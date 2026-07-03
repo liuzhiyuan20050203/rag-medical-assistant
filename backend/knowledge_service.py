@@ -1,18 +1,19 @@
 import json
-import os
 import re
 from pathlib import Path
 from datetime import datetime
 
-import pymysql
-from dotenv import load_dotenv
+from db import (
+    ensure_normalized_schema,
+    get_connection as mysql_connection,
+    replace_disease_symptoms,
+    upsert_named_row,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
-
-load_dotenv(BASE_DIR / ".env")
 
 
 COMMON_SYMPTOMS = [
@@ -26,16 +27,8 @@ def get_connection():
     """
     获取 MySQL 数据库连接
     """
-    return pymysql.connect(
-        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
-        port=int(os.getenv("MYSQL_PORT", "3306")),
-        user=os.getenv("MYSQL_USER", "root"),
-        password=os.getenv("MYSQL_PASSWORD", ""),
-        database=os.getenv("MYSQL_DATABASE", "rag_medical"),
-        charset=os.getenv("MYSQL_CHARSET", "utf8mb4"),
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=True
-    )
+    ensure_normalized_schema()
+    return mysql_connection()
 
 
 def split_symptoms(symptoms):
@@ -70,26 +63,40 @@ def join_symptoms(symptoms):
 
 def get_all_diseases():
     """
-    获取全部常见病知识：从规范化 MySQL diseases 表读取。
+    获取全部常见病知识：从规范化 MySQL diseases / disease_symptoms 表读取。
     """
+    ensure_normalized_schema()
+
     sql = """
         SELECT
-            id,
-            name,
-            category,
-            symptoms,
-            description,
-            care_advice,
-            medicine_notice,
-            warning
-        FROM diseases
-        ORDER BY id ASC
+            d.id,
+            d.name,
+            COALESCE(c.name, '') AS category,
+            d.description,
+            d.care_advice,
+            d.medicine_notice,
+            d.warning
+        FROM diseases d
+        LEFT JOIN disease_categories c ON c.id = d.category_id
+        ORDER BY d.id ASC
     """
 
-    with get_connection() as conn:
+    with mysql_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(sql)
             rows = cursor.fetchall()
+            cursor.execute(
+                """
+                SELECT disease_id, symptom
+                FROM disease_symptoms
+                ORDER BY disease_id ASC, sort_order ASC, id ASC
+                """
+            )
+            symptom_rows = cursor.fetchall()
+
+    symptoms_by_disease = {}
+    for row in symptom_rows:
+        symptoms_by_disease.setdefault(row["disease_id"], []).append(row["symptom"])
 
     result = []
     for row in rows:
@@ -97,7 +104,7 @@ def get_all_diseases():
             "id": row.get("id"),
             "name": row.get("name", ""),
             "category": row.get("category", ""),
-            "symptoms": split_symptoms(row.get("symptoms", "")),
+            "symptoms": symptoms_by_disease.get(row.get("id"), []),
             "description": row.get("description", ""),
             "care_advice": row.get("care_advice", ""),
             "medicine_notice": row.get("medicine_notice", ""),
@@ -109,22 +116,25 @@ def get_all_diseases():
 
 def get_all_medicines():
     """
-    获取全部药品知识：从规范化 MySQL medicines 表读取。
+    获取全部药品知识：从规范化 MySQL medicines / medicine_types 表读取。
     """
+    ensure_normalized_schema()
+
     sql = """
         SELECT
-            id,
-            name,
-            type,
-            usage_info,
-            notice,
-            contraindication,
-            side_effect
-        FROM medicines
-        ORDER BY id ASC
+            m.id,
+            m.name,
+            COALESCE(t.name, '') AS type,
+            m.usage_info,
+            m.notice,
+            m.contraindication,
+            m.side_effect
+        FROM medicines m
+        LEFT JOIN medicine_types t ON t.id = m.type_id
+        ORDER BY m.id ASC
     """
 
-    with get_connection() as conn:
+    with mysql_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(sql)
             rows = cursor.fetchall()
@@ -144,6 +154,34 @@ def get_all_medicines():
     return result
 
 
+def get_all_warning_rules():
+    """
+    读取危险症状规则：用于 RAG 索引和来源引用。
+    """
+    ensure_normalized_schema()
+
+    sql = """
+        SELECT id, keyword, risk_level, advice
+        FROM warning_rules
+        ORDER BY id ASC
+    """
+
+    with mysql_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+
+    return [
+        {
+            "id": row.get("id"),
+            "keyword": row.get("keyword", ""),
+            "risk_level": row.get("risk_level", ""),
+            "advice": row.get("advice", ""),
+        }
+        for row in rows
+    ]
+
+
 def search_medicine(keyword: str):
     """
     根据药品名称、药品类别或适用情况查询药品信息。
@@ -153,25 +191,28 @@ def search_medicine(keyword: str):
     if not keyword:
         return []
 
+    ensure_normalized_schema()
+
     sql = """
         SELECT
-            id,
-            name,
-            type,
-            usage_info,
-            notice,
-            contraindication,
-            side_effect
-        FROM medicines
-        WHERE name LIKE %s
-           OR type LIKE %s
-           OR usage_info LIKE %s
-        ORDER BY id ASC
+            m.id,
+            m.name,
+            COALESCE(t.name, '') AS type,
+            m.usage_info,
+            m.notice,
+            m.contraindication,
+            m.side_effect
+        FROM medicines m
+        LEFT JOIN medicine_types t ON t.id = m.type_id
+        WHERE m.name LIKE %s
+           OR t.name LIKE %s
+           OR m.usage_info LIKE %s
+        ORDER BY m.id ASC
     """
 
     like_keyword = f"%{keyword}%"
 
-    with get_connection() as conn:
+    with mysql_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(sql, (like_keyword, like_keyword, like_keyword))
             rows = cursor.fetchall()
@@ -208,85 +249,99 @@ def save_uploaded_source(file_name: str, content: str, doc_type: str):
 
 def append_diseases(records):
     """
-    批量追加疾病知识：写入 MySQL diseases 表。
+    批量追加疾病知识：写入 MySQL diseases / disease_symptoms 规范表。
     """
     saved_records = []
 
-    sql = """
-        INSERT INTO diseases
-        (name, category, symptoms, description, care_advice, medicine_notice, warning)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            category = VALUES(category),
-            symptoms = VALUES(symptoms),
-            description = VALUES(description),
-            care_advice = VALUES(care_advice),
-            medicine_notice = VALUES(medicine_notice),
-            warning = VALUES(warning),
-            updated_at = CURRENT_TIMESTAMP
-    """
+    ensure_normalized_schema()
 
-    with get_connection() as conn:
-        with conn.cursor() as cursor:
-            for item in records:
-                record = normalize_disease_record(item)
-                symptoms_text = join_symptoms(record.get("symptoms", []))
+    with mysql_connection(autocommit=False) as conn:
+        try:
+            with conn.cursor() as cursor:
+                for item in records:
+                    record = normalize_disease_record(item)
+                    category_id = upsert_named_row(cursor, "disease_categories", record.get("category", ""))
 
-                cursor.execute(
-                    sql,
-                    (
-                        record.get("name", ""),
-                        record.get("category", ""),
-                        symptoms_text,
-                        record.get("description", ""),
-                        record.get("care_advice", ""),
-                        record.get("medicine_notice", ""),
-                        record.get("warning", "")
+                    cursor.execute(
+                        """
+                        INSERT INTO diseases
+                        (name, category_id, description, care_advice, medicine_notice, warning)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE
+                            category_id = VALUES(category_id),
+                            description = VALUES(description),
+                            care_advice = VALUES(care_advice),
+                            medicine_notice = VALUES(medicine_notice),
+                            warning = VALUES(warning),
+                            updated_at = CURRENT_TIMESTAMP
+                        """,
+                        (
+                            record.get("name", ""),
+                            category_id,
+                            record.get("description", ""),
+                            record.get("care_advice", ""),
+                            record.get("medicine_notice", ""),
+                            record.get("warning", "")
+                        )
                     )
-                )
-
-                saved_records.append(record)
+                    cursor.execute("SELECT id FROM diseases WHERE name = %s", (record.get("name", ""),))
+                    row = cursor.fetchone()
+                    record["id"] = row["id"] if row else None
+                    replace_disease_symptoms(cursor, record["id"], record.get("symptoms", []))
+                    saved_records.append(record)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     return saved_records
 
 
 def append_medicines(records):
     """
-    批量追加药品知识：写入 MySQL medicines 表。
+    批量追加药品知识：写入 MySQL medicines / medicine_types 规范表。
     """
     saved_records = []
 
-    sql = """
-        INSERT INTO medicines
-        (name, type, usage_info, notice, contraindication, side_effect)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            type = VALUES(type),
-            usage_info = VALUES(usage_info),
-            notice = VALUES(notice),
-            contraindication = VALUES(contraindication),
-            side_effect = VALUES(side_effect),
-            updated_at = CURRENT_TIMESTAMP
-    """
+    ensure_normalized_schema()
 
-    with get_connection() as conn:
-        with conn.cursor() as cursor:
-            for item in records:
-                record = normalize_medicine_record(item)
+    with mysql_connection(autocommit=False) as conn:
+        try:
+            with conn.cursor() as cursor:
+                for item in records:
+                    record = normalize_medicine_record(item)
+                    type_id = upsert_named_row(cursor, "medicine_types", record.get("type", ""))
 
-                cursor.execute(
-                    sql,
-                    (
-                        record.get("name", ""),
-                        record.get("type", ""),
-                        record.get("usage", ""),
-                        record.get("notice", ""),
-                        record.get("contraindication", ""),
-                        record.get("side_effect", "")
+                    cursor.execute(
+                        """
+                        INSERT INTO medicines
+                        (name, type_id, usage_info, notice, contraindication, side_effect)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE
+                            type_id = VALUES(type_id),
+                            usage_info = VALUES(usage_info),
+                            notice = VALUES(notice),
+                            contraindication = VALUES(contraindication),
+                            side_effect = VALUES(side_effect),
+                            updated_at = CURRENT_TIMESTAMP
+                        """,
+                        (
+                            record.get("name", ""),
+                            type_id,
+                            record.get("usage", ""),
+                            record.get("notice", ""),
+                            record.get("contraindication", ""),
+                            record.get("side_effect", "")
+                        )
                     )
-                )
-
-                saved_records.append(record)
+                    cursor.execute("SELECT id FROM medicines WHERE name = %s", (record.get("name", ""),))
+                    row = cursor.fetchone()
+                    record["id"] = row["id"] if row else None
+                    saved_records.append(record)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     return saved_records
 

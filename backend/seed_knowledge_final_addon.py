@@ -1,7 +1,13 @@
-import os
-import pymysql
 from pathlib import Path
 from dotenv import load_dotenv
+
+from db import (
+    ensure_normalized_schema,
+    get_connection as mysql_connection,
+    upsert_disease_record,
+    upsert_medicine_record,
+    upsert_warning_rule,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -9,16 +15,8 @@ load_dotenv(BASE_DIR / ".env", override=True)
 
 
 def get_connection():
-    return pymysql.connect(
-        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
-        port=int(os.getenv("MYSQL_PORT", "3306")),
-        user=os.getenv("MYSQL_USER", "root"),
-        password=os.getenv("MYSQL_PASSWORD", ""),
-        database=os.getenv("MYSQL_DATABASE", "rag_medical"),
-        charset=os.getenv("MYSQL_CHARSET", "utf8mb4"),
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=True
-    )
+    ensure_normalized_schema()
+    return mysql_connection()
 
 
 DISEASES = [
@@ -440,80 +438,18 @@ WARNING_RULES = [
 
 
 def upsert_diseases(cursor):
-    sql = """
-        INSERT INTO diseases
-        (name, category, symptoms, description, care_advice, medicine_notice, warning)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            category = VALUES(category),
-            symptoms = VALUES(symptoms),
-            description = VALUES(description),
-            care_advice = VALUES(care_advice),
-            medicine_notice = VALUES(medicine_notice),
-            warning = VALUES(warning)
-    """
-
     for item in DISEASES:
-        cursor.execute(
-            sql,
-            (
-                item["name"],
-                item["category"],
-                item["symptoms"],
-                item["description"],
-                item["care_advice"],
-                item["medicine_notice"],
-                item["warning"]
-            )
-        )
+        upsert_disease_record(cursor, item)
 
 
 def upsert_medicines(cursor):
-    sql = """
-        INSERT INTO medicines
-        (name, type, usage_info, notice, contraindication, side_effect)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            type = VALUES(type),
-            usage_info = VALUES(usage_info),
-            notice = VALUES(notice),
-            contraindication = VALUES(contraindication),
-            side_effect = VALUES(side_effect)
-    """
-
     for item in MEDICINES:
-        cursor.execute(
-            sql,
-            (
-                item["name"],
-                item["type"],
-                item["usage_info"],
-                item["notice"],
-                item["contraindication"],
-                item["side_effect"]
-            )
-        )
+        upsert_medicine_record(cursor, item)
 
 
 def upsert_warning_rules(cursor):
-    sql = """
-        INSERT INTO warning_rules
-        (keyword, risk_level, advice)
-        VALUES (%s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            risk_level = VALUES(risk_level),
-            advice = VALUES(advice)
-    """
-
     for item in WARNING_RULES:
-        cursor.execute(
-            sql,
-            (
-                item["keyword"],
-                item["risk_level"],
-                item["advice"]
-            )
-        )
+        upsert_warning_rule(cursor, item)
 
 
 def count_table(cursor, table_name):

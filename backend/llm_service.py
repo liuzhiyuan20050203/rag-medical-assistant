@@ -49,6 +49,11 @@ def build_retrieved_context(retrieved_docs):
         title = doc.get("title", "")
         doc_type_value = doc.get("doc_type", "")
         content = doc.get("content", "")
+        citation = doc.get("citation", "")
+        source = doc.get("source") or {}
+        source_label = source.get("label", "")
+        if citation or source_label:
+            content = f"来源：{citation or source_label}\n{content}"
 
         if doc_type_value == "disease":
             doc_type = "常见病"
