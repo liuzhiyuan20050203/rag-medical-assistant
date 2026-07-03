@@ -10,7 +10,13 @@ from knowledge_service import (
     parse_disease_upload,
     parse_medicine_upload
 )
-from rag_service import search_knowledge, build_simple_answer, init_vector_store
+from rag_service import (
+    search_knowledge,
+    filter_answer_docs,
+    build_simple_answer,
+    init_vector_store
+)
+from database_context_service import search_database_context
 from history_service import (
     add_history_record,
     get_history_list,
@@ -33,7 +39,8 @@ from storage import get_storage_status
 from multimodal_service import (
     analyze_image_payload,
     analyze_video_payload,
-    analyze_voice_transcript
+    analyze_voice_transcript,
+    get_multimodal_status
 )
 
 app = FastAPI(title="基于RAG的常见病自查与用药指南系统")
@@ -196,6 +203,14 @@ def multimodal_image_analyze(data: dict):
             "success": False,
             "message": str(exc)
         }
+
+
+@app.get("/api/multimodal/status")
+def multimodal_status():
+    """
+    查看多模态视觉模型配置状态。
+    """
+    return get_multimodal_status()
 
 
 @app.post("/api/multimodal/video/analyze")
@@ -435,15 +450,26 @@ def rag_search(data: dict):
             "question": question,
             "count": 0,
             "data": [],
+            "database_context": {
+                "diseases": [],
+                "medicines": [],
+                "has_matches": False
+            },
             "message": "请输入检索问题。"
         }
 
     results = search_knowledge(question, top_k=top_k)
+    database_context = search_database_context(
+        question,
+        disease_limit=top_k,
+        medicine_limit=top_k
+    )
 
     return {
         "question": question,
         "count": len(results),
         "data": results,
+        "database_context": database_context,
         "message": "检索成功"
     }
 
@@ -460,7 +486,12 @@ def chat(data: dict):
             "question": question,
             "answer": "请输入你的症状描述。",
             "warning": None,
-            "retrieved_docs": []
+            "retrieved_docs": [],
+            "database_context": {
+                "diseases": [],
+                "medicines": [],
+                "has_matches": False
+            }
         }
 
     # 第一步：危险症状检查
@@ -474,7 +505,12 @@ def chat(data: dict):
             question=question,
             answer=answer,
             warning=warning_result,
-            retrieved_docs=[]
+            retrieved_docs=[],
+            database_context={
+                "diseases": [],
+                "medicines": [],
+                "has_matches": False
+            }
         )
 
         return {
@@ -482,30 +518,46 @@ def chat(data: dict):
             "answer": answer,
             "warning": warning_result,
             "retrieved_docs": [],
+            "database_context": {
+                "diseases": [],
+                "medicines": [],
+                "has_matches": False
+            },
             "history_id": record.get("id")
         }
 
-    # 第二步：RAG知识库检索
-    retrieved_docs = search_knowledge(question, top_k=3)
+    # 第二步：数据库结构化记录匹配
+    database_context = search_database_context(
+        question,
+        disease_limit=3,
+        medicine_limit=3
+    )
 
-    # 第三步：先生成本地模板回答，作为兜底方案
-    fallback_answer = build_simple_answer(question, retrieved_docs)
+    # 第三步：RAG知识库检索
+    retrieved_docs = filter_answer_docs(
+        search_knowledge(question, top_k=8),
+        database_context=database_context
+    )
 
-    # 第四步：调用大模型，基于RAG检索结果生成回答
-    llm_result = generate_llm_answer(question, retrieved_docs)
+    # 第四步：先生成本地模板回答，作为兜底方案
+    fallback_answer = build_simple_answer(question, retrieved_docs, database_context)
+
+    # 第五步：调用大模型，基于数据库命中和RAG检索结果生成回答
+    llm_result = generate_llm_answer(question, retrieved_docs, database_context)
 
     if llm_result["success"]:
         answer = llm_result["answer"]
     else:
         answer = fallback_answer
 
-    # 第五步：保存问答历史
+    # 第六步：保存问答历史
     record = add_history_record(
         question=question,
         answer=answer,
         warning=warning_result,
         retrieved_docs=retrieved_docs,
-        llm = llm_result
+        llm=llm_result,
+        database_context=database_context
     )
 
     return {
@@ -513,6 +565,7 @@ def chat(data: dict):
         "answer": answer,
         "warning": warning_result,
         "retrieved_docs": retrieved_docs,
+        "database_context": database_context,
         "history_id": record.get("id"),
         "llm": {
             "used": llm_result["success"],

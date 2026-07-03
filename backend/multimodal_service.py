@@ -6,9 +6,10 @@ from statistics import mean
 
 from PIL import Image, ImageFilter, ImageStat
 
-from rag_service import search_knowledge
+from database_context_service import search_database_context
+from rag_service import filter_answer_docs, search_knowledge
 from safety_check import check_warning
-from vision_llm_service import analyze_images_with_vision_llm
+from vision_llm_service import analyze_images_with_vision_llm, get_vision_llm_config, vision_llm_available
 
 
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
@@ -314,12 +315,92 @@ def retrieve_condition_docs(query_text: str, tags=None, top_k=3):
         return []
 
     try:
-        docs = search_knowledge(query_text, top_k=top_k + 2)
+        database_context = search_database_context(query_text, disease_limit=top_k, medicine_limit=top_k)
+        docs = filter_answer_docs(
+            search_knowledge(query_text, top_k=top_k + 4),
+            database_context=database_context
+        )
     except Exception:
         return []
 
     disease_docs = [doc for doc in docs if doc.get("doc_type") == "disease"]
     return disease_docs[:top_k]
+
+
+def build_multimodal_context(query_text: str, tags=None, top_k=3):
+    tags = tags or []
+    query_text = compact_text(query_text, 500) or fallback_query_for_tags(tags)
+
+    if not query_text:
+        return {
+            "query_text": "",
+            "database_context": {
+                "diseases": [],
+                "medicines": [],
+                "has_matches": False
+            },
+            "retrieved_docs": [],
+            "condition_docs": [],
+            "medicine_docs": []
+        }
+
+    try:
+        database_context = search_database_context(
+            query_text,
+            disease_limit=top_k,
+            medicine_limit=top_k
+        )
+        retrieved_docs = filter_answer_docs(
+            search_knowledge(query_text, top_k=top_k + 4),
+            database_context=database_context
+        )
+    except Exception:
+        database_context = {
+            "diseases": [],
+            "medicines": [],
+            "has_matches": False
+        }
+        retrieved_docs = []
+
+    db_disease_docs = [
+        {
+            "title": item.get("title", ""),
+            "doc_type": "disease",
+            "score": item.get("score", 0),
+            "matched_fields": item.get("matched_fields", []),
+            "raw": item.get("raw") or {}
+        }
+        for item in database_context.get("diseases", [])
+    ]
+    db_medicine_docs = [
+        {
+            "title": item.get("title", ""),
+            "doc_type": "medicine",
+            "score": item.get("score", 0),
+            "matched_fields": item.get("matched_fields", []),
+            "raw": item.get("raw") or {}
+        }
+        for item in database_context.get("medicines", [])
+    ]
+
+    seen_diseases = {doc.get("title") for doc in db_disease_docs}
+    seen_medicines = {doc.get("title") for doc in db_medicine_docs}
+    rag_disease_docs = [
+        doc for doc in retrieved_docs
+        if doc.get("doc_type") == "disease" and doc.get("title") not in seen_diseases
+    ]
+    rag_medicine_docs = [
+        doc for doc in retrieved_docs
+        if doc.get("doc_type") == "medicine" and doc.get("title") not in seen_medicines
+    ]
+
+    return {
+        "query_text": query_text,
+        "database_context": database_context,
+        "retrieved_docs": retrieved_docs,
+        "condition_docs": (db_disease_docs + rag_disease_docs)[:top_k],
+        "medicine_docs": (db_medicine_docs + rag_medicine_docs)[:top_k]
+    }
 
 
 def condition_items_from_docs(docs):
@@ -418,7 +499,7 @@ def medicine_items_from_docs(docs):
     items = []
     for doc in docs:
         raw = doc.get("raw") or {}
-        notice = compact_text(raw.get("medicine_notice"), 130)
+        notice = compact_text(raw.get("medicine_notice") or raw.get("notice"), 130)
         if notice and notice not in items:
             items.append(notice)
     if not items:
@@ -473,7 +554,9 @@ def build_image_answer(stats, tags, observations, capture_tips, llm_result, note
         fallback_query_for_tags(tags)
     )
     warning = effective_warning(query_text, check_warning(query_text))
-    condition_docs = retrieve_condition_docs(query_text, tags)
+    context = build_multimodal_context(query_text, tags)
+    condition_docs = context["condition_docs"]
+    medicine_docs = context["medicine_docs"]
     possible_conditions = condition_items_from_docs(condition_docs) or fallback_conditions(tags, query_text)
     risk_level = determine_risk(query_text, tags, warning, condition_docs)
     department = department_from_context(tags, condition_docs, query_text)
@@ -490,7 +573,7 @@ def build_image_answer(stats, tags, observations, capture_tips, llm_result, note
             "先补充症状持续时间、是否疼痛/瘙痒/发热、范围是否扩大、是否已经用药。",
             "保留清晰图片和症状变化记录，方便医生判断。"
         ],
-        "medication_reminder": medicine_items_from_docs(condition_docs),
+        "medication_reminder": medicine_items_from_docs(medicine_docs or condition_docs),
         "red_flags": red_flags_from_docs(condition_docs, warning),
         "follow_up_questions": ensure_list(analysis.get("recommended_questions"), limit=4) or [
             "症状从什么时候开始？",
@@ -516,7 +599,9 @@ def build_video_answer(frame_results, weak_frames, llm_result, note):
         fallback_query_for_tags(tags)
     )
     warning = effective_warning(query_text, check_warning(query_text))
-    condition_docs = retrieve_condition_docs(query_text, tags)
+    context = build_multimodal_context(query_text, tags)
+    condition_docs = context["condition_docs"]
+    medicine_docs = context["medicine_docs"]
     possible_conditions = condition_items_from_docs(condition_docs) or fallback_conditions(tags, query_text)
     risk_level = determine_risk(query_text, tags, warning, condition_docs)
     department = department_from_context(tags, condition_docs, query_text)
@@ -533,7 +618,7 @@ def build_video_answer(frame_results, weak_frames, llm_result, note):
             "优先选择清晰、稳定、主体完整的画面重新分析。",
             "补充症状持续时间、变化过程、是否加重和伴随症状。"
         ],
-        "medication_reminder": medicine_items_from_docs(condition_docs),
+        "medication_reminder": medicine_items_from_docs(medicine_docs or condition_docs),
         "red_flags": red_flags_from_docs(condition_docs, warning),
         "follow_up_questions": ensure_list(analysis.get("recommended_questions"), limit=4) or [
             "视频中的不适持续了多久？",
@@ -544,7 +629,7 @@ def build_video_answer(frame_results, weak_frames, llm_result, note):
     }
 
 
-def build_voice_answer(transcript, warning, retrieved_docs):
+def build_voice_answer(transcript, warning, retrieved_docs, database_context=None):
     query_text = compact_text(transcript, 500)
     urgent_warning = effective_warning(query_text, warning)
     if text_has_urgent_signal(query_text) and not warning.get("has_warning"):
@@ -554,7 +639,15 @@ def build_voice_answer(transcript, warning, retrieved_docs):
             "message": "你描述中包含可能需要尽快处理的危险信号，建议及时线下就医。"
         }
 
-    condition_docs = [doc for doc in retrieved_docs if doc.get("doc_type") == "disease"][:3]
+    context = build_multimodal_context(query_text, [], top_k=3)
+    if database_context is not None:
+        context["database_context"] = database_context
+    condition_docs = context["condition_docs"] or [
+        doc for doc in retrieved_docs if doc.get("doc_type") == "disease"
+    ][:3]
+    medicine_docs = context["medicine_docs"] or [
+        doc for doc in retrieved_docs if doc.get("doc_type") == "medicine"
+    ][:3]
     possible_conditions = condition_items_from_docs(condition_docs) or fallback_conditions([], query_text)
     risk_level = determine_risk(query_text, [], urgent_warning, condition_docs)
     department = department_from_context([], condition_docs, query_text)
@@ -571,7 +664,7 @@ def build_voice_answer(transcript, warning, retrieved_docs):
             "记录体温、疼痛程度、症状开始时间和是否加重。",
             "如果症状轻微，可先休息、补水并观察变化；加重或反复时去门诊。"
         ],
-        "medication_reminder": medicine_items_from_docs(condition_docs),
+        "medication_reminder": medicine_items_from_docs(medicine_docs or condition_docs),
         "red_flags": red_flags_from_docs(condition_docs, urgent_warning),
         "follow_up_questions": [
             "最主要的不适是什么，持续了多久？",
@@ -599,6 +692,15 @@ def analyze_image_payload(
     )
     observations = build_image_observations(stats, tags)
     capture_tips = build_capture_tips(stats)
+    answer = build_image_answer(stats, tags, observations, capture_tips, llm_result, note)
+    query_text = query_from_parts(
+        note,
+        (get_llm_analysis(llm_result) or {}).get("summary"),
+        (get_llm_analysis(llm_result) or {}).get("likely_scene"),
+        " ".join(answer.get("evidence", [])),
+        fallback_query_for_tags(tags)
+    )
+    context = build_multimodal_context(query_text, tags)
 
     return {
         "success": True,
@@ -608,7 +710,9 @@ def analyze_image_payload(
         "file_size": len(raw),
         "visual": stats,
         "tags": tags,
-        "answer": build_image_answer(stats, tags, observations, capture_tips, llm_result, note),
+        "answer": answer,
+        "database_context": context["database_context"],
+        "retrieved_docs": context["retrieved_docs"],
         "observations": observations,
         "capture_tips": capture_tips,
         "llm": llm_result,
@@ -659,6 +763,16 @@ def analyze_video_payload(frames, file_name: str = "", note: str = "", duration=
     ]
 
     llm_result = analyze_images_with_vision_llm(frame_images, note=note)
+    answer = build_video_answer(frame_results, weak_frames, llm_result, note)
+    analysis = get_llm_analysis(llm_result)
+    query_text = query_from_parts(
+        note,
+        analysis.get("summary"),
+        analysis.get("likely_scene"),
+        " ".join(answer.get("evidence", [])),
+        fallback_query_for_tags(tags)
+    )
+    context = build_multimodal_context(query_text, tags)
 
     return {
         "success": True,
@@ -675,7 +789,9 @@ def analyze_video_payload(frames, file_name: str = "", note: str = "", duration=
         },
         "weak_frames": weak_frames,
         "frames": frame_results,
-        "answer": build_video_answer(frame_results, weak_frames, llm_result, note),
+        "answer": answer,
+        "database_context": context["database_context"],
+        "retrieved_docs": context["retrieved_docs"],
         "llm": llm_result,
         "medical_notice": "视频关键帧识别仅用于辅助观察画面质量和可见线索，不能替代医生检查。"
     }
@@ -707,7 +823,8 @@ def analyze_voice_transcript(text: str):
         }
 
     warning = check_warning(transcript)
-    retrieved_docs = [] if warning.get("has_warning") else search_knowledge(transcript, top_k=2)
+    context = build_multimodal_context(transcript, [], top_k=3)
+    retrieved_docs = [] if warning.get("has_warning") else context["retrieved_docs"]
 
     return {
         "success": True,
@@ -716,7 +833,25 @@ def analyze_voice_transcript(text: str):
         "character_count": len(transcript),
         "warning": warning,
         "retrieved_docs": retrieved_docs,
-        "answer": build_voice_answer(transcript, warning, retrieved_docs),
+        "database_context": context["database_context"],
+        "answer": build_voice_answer(transcript, warning, retrieved_docs, context["database_context"]),
         "next_action": "trigger_warning" if warning.get("has_warning") else "send_to_chat",
         "message": "已完成语音文本分析"
+    }
+
+
+def get_multimodal_status():
+    config = get_vision_llm_config()
+
+    return {
+        "vision_llm_available": vision_llm_available(),
+        "provider": config["provider"],
+        "model": config["model"],
+        "base_url_configured": bool(config["base_url"]),
+        "api_key_configured": bool(config["api_key"]),
+        "message": (
+            "多模态视觉模型已配置，图片和视频关键帧会调用视觉模型识别。"
+            if vision_llm_available()
+            else "未配置多模态视觉模型，当前使用本地图像质量分析、用户补充描述、数据库和RAG生成建议。"
+        )
     }

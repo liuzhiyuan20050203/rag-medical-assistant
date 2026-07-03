@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env", override=True)
 
+_DATABASE_CONTEXT_COLUMN_READY = False
+
 
 def get_connection():
     """
@@ -48,6 +50,14 @@ def json_loads(text, default=None):
         return json.loads(text)
     except Exception:
         return default
+
+
+def default_database_context():
+    return {
+        "diseases": [],
+        "medicines": [],
+        "has_matches": False
+    }
 
 
 def format_time(value):
@@ -101,12 +111,36 @@ def parse_llm_info(llm):
     return 0, "", ""
 
 
+def ensure_database_context_column():
+    """
+    兼容已有 chat_history 表：缺少 database_context 列时自动补上。
+    """
+    global _DATABASE_CONTEXT_COLUMN_READY
+
+    if _DATABASE_CONTEXT_COLUMN_READY:
+        return
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'database_context'")
+            if not cursor.fetchone():
+                cursor.execute(
+                    """
+                    ALTER TABLE chat_history
+                    ADD COLUMN database_context LONGTEXT NULL AFTER retrieved_docs
+                    """
+                )
+
+    _DATABASE_CONTEXT_COLUMN_READY = True
+
+
 def row_to_record(row):
     """
     将数据库行转换成前端原来使用的历史记录格式。
     """
     warning_keywords = json_loads(row.get("warning_keywords"), [])
     retrieved_docs = json_loads(row.get("retrieved_docs"), [])
+    database_context = json_loads(row.get("database_context"), default_database_context())
 
     return {
         "id": row.get("id"),
@@ -125,6 +159,7 @@ def row_to_record(row):
             )
         },
         "retrieved_docs": retrieved_docs,
+        "database_context": database_context,
         "llm": {
             "used": bool(row.get("llm_used")),
             "provider": row.get("llm_provider", "") or "",
@@ -160,6 +195,8 @@ def save_history(history_list):
     兼容旧代码：用传入列表覆盖 chat_history。
     一般情况下不建议主动调用，清空历史请使用 clear_history_records。
     """
+    ensure_database_context_column()
+
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("DELETE FROM chat_history")
@@ -173,11 +210,12 @@ def save_history(history_list):
                     INSERT INTO chat_history
                     (
                         question, answer, has_warning, warning_keywords,
-                        retrieved_docs, llm_used, llm_provider, llm_model,
+                        retrieved_docs, database_context,
+                        llm_used, llm_provider, llm_model,
                         is_error, error_reason, satisfaction, rating,
                         feedback_text, create_time, review_time
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         item.get("question", ""),
@@ -185,6 +223,7 @@ def save_history(history_list):
                         has_warning,
                         json_dumps(warning_keywords),
                         json_dumps(item.get("retrieved_docs", [])),
+                        json_dumps(item.get("database_context", default_database_context())),
                         1 if item.get("llm", {}).get("used") else 0,
                         item.get("llm", {}).get("provider", ""),
                         item.get("llm", {}).get("model", ""),
@@ -208,12 +247,20 @@ def next_history_id(history_list):
     return max(item.get("id", 0) for item in history_list) + 1
 
 
-def add_history_record(question, answer, warning=None, retrieved_docs=None, llm=None):
+def add_history_record(
+    question,
+    answer,
+    warning=None,
+    retrieved_docs=None,
+    llm=None,
+    database_context=None
+):
     """
     新增一条问答历史记录，写入 MySQL chat_history 表。
     """
     has_warning, warning_keywords = parse_warning_info(warning)
     llm_used, llm_provider, llm_model = parse_llm_info(llm)
+    ensure_database_context_column()
 
     sql = """
         INSERT INTO chat_history
@@ -223,6 +270,7 @@ def add_history_record(question, answer, warning=None, retrieved_docs=None, llm=
             has_warning,
             warning_keywords,
             retrieved_docs,
+            database_context,
             llm_used,
             llm_provider,
             llm_model,
@@ -232,7 +280,7 @@ def add_history_record(question, answer, warning=None, retrieved_docs=None, llm=
             rating,
             feedback_text
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, '', '', 0, '')
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, '', '', 0, '')
     """
 
     with get_connection() as conn:
@@ -245,6 +293,7 @@ def add_history_record(question, answer, warning=None, retrieved_docs=None, llm=
                     has_warning,
                     json_dumps(warning_keywords),
                     json_dumps(retrieved_docs or []),
+                    json_dumps(database_context or default_database_context()),
                     llm_used,
                     llm_provider,
                     llm_model

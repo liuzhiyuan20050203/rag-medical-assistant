@@ -3,7 +3,7 @@
     <div class="page-title">
       <h2>症状自查</h2>
       <p>
-        请输入你的症状描述，系统会先进行危险症状识别，再基于常见病知识库进行RAG检索，
+        请输入你的症状描述，系统会先进行危险症状识别，再匹配数据库记录并结合常见病知识库RAG检索，
         返回可能相关疾病方向、日常护理建议、用药注意事项和就医提醒。
       </p>
     </div>
@@ -98,6 +98,64 @@
       </div>
     </div>
 
+    <div v-if="hasDatabaseMatches" class="docs database-docs">
+      <h3>数据库命中的结构化记录</h3>
+
+      <div v-if="databaseDiseases.length > 0" class="database-group">
+        <h4>疾病记录</h4>
+
+        <div v-for="(item, index) in databaseDiseases" :key="`disease-${index}`" class="doc-card">
+          <div class="doc-header">
+            <div>
+              <strong>{{ index + 1 }}. {{ item.title }}</strong>
+              <span class="doc-type">常见病</span>
+            </div>
+
+            <span class="score">匹配分：{{ item.score }}</span>
+          </div>
+
+          <div class="matched-list">
+            <span v-for="(match, matchIndex) in item.matched_fields" :key="matchIndex">
+              {{ match }}
+            </span>
+          </div>
+
+          <p class="doc-content">
+            常见症状：{{ (item.raw && item.raw.symptoms || []).join('、') }}
+            <br />
+            {{ item.raw && item.raw.description }}
+          </p>
+        </div>
+      </div>
+
+      <div v-if="databaseMedicines.length > 0" class="database-group">
+        <h4>药品记录</h4>
+
+        <div v-for="(item, index) in databaseMedicines" :key="`medicine-${index}`" class="doc-card">
+          <div class="doc-header">
+            <div>
+              <strong>{{ index + 1 }}. {{ item.title }}</strong>
+              <span class="doc-type">药品</span>
+            </div>
+
+            <span class="score">匹配分：{{ item.score }}</span>
+          </div>
+
+          <div class="matched-list">
+            <span v-for="(match, matchIndex) in item.matched_fields" :key="matchIndex">
+              {{ match }}
+            </span>
+          </div>
+
+          <p class="doc-content">
+            适用情况：{{ item.raw && item.raw.usage }}
+            <br />
+            注意事项：{{ item.raw && item.raw.notice }}
+          </p>
+        </div>
+      </div>
+    </div>
+
     <div v-if="retrievedDocs.length > 0" class="docs">
       <h3>RAG检索到的相关知识</h3>
 
@@ -126,12 +184,17 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { apiUrl } from '../api'
 
 const question = ref('')
 const answer = ref('')
 const retrievedDocs = ref([])
+const databaseContext = ref({
+  diseases: [],
+  medicines: [],
+  has_matches: false,
+})
 const warning = ref(null)
 const llmInfo = ref(null)
 const loading = ref(false)
@@ -145,6 +208,12 @@ const fillExample = (text) => {
   question.value = text
 }
 
+const databaseDiseases = computed(() => databaseContext.value?.diseases || [])
+const databaseMedicines = computed(() => databaseContext.value?.medicines || [])
+const hasDatabaseMatches = computed(() => (
+  databaseDiseases.value.length > 0 || databaseMedicines.value.length > 0
+))
+
 const submitQuestion = async () => {
   if (!question.value.trim()) {
     alert('请输入症状描述')
@@ -154,6 +223,11 @@ const submitQuestion = async () => {
   loading.value = true
   answer.value = ''
   retrievedDocs.value = []
+  databaseContext.value = {
+    diseases: [],
+    medicines: [],
+    has_matches: false,
+  }
   warning.value = null
   llmInfo.value = null
   historyId.value = null
@@ -176,6 +250,11 @@ const submitQuestion = async () => {
 
     answer.value = data.answer
     retrievedDocs.value = data.retrieved_docs || []
+    databaseContext.value = data.database_context || {
+      diseases: [],
+      medicines: [],
+      has_matches: false,
+    }
     warning.value = data.warning || null
     llmInfo.value = data.llm || null
     historyId.value = data.history_id || null
@@ -393,6 +472,37 @@ pre {
   color: #4b5563;
   line-height: 1.8;
   white-space: pre-wrap;
+}
+
+.database-docs {
+  border: 1px solid #bfdbfe;
+}
+
+.database-group + .database-group {
+  margin-top: 20px;
+}
+
+.database-group h4 {
+  margin: 16px 0 8px;
+  color: #1f2937;
+  font-size: 16px;
+}
+
+.matched-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.matched-list span {
+  background: #ecfeff;
+  color: #0f766e;
+  border: 1px solid #99f6e4;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .notice {

@@ -17,6 +17,17 @@
       </button>
     </div>
 
+    <div class="status-panel">
+      <div>
+        <strong>视觉模型状态</strong>
+        <span>{{ multimodalStatusText }}</span>
+      </div>
+      <div>
+        <strong>当前链路</strong>
+        <span>图片/视频 → 视觉分析 → 数据库命中 → RAG补充 → 就诊建议</span>
+      </div>
+    </div>
+
     <section v-if="activeModule === 'image'" class="module-layout">
       <div class="tool-panel">
         <div class="panel-heading">
@@ -140,7 +151,7 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onBeforeUnmount, ref } from 'vue'
+import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref } from 'vue'
 import { apiUrl } from '../api'
 
 const toList = (value) => {
@@ -149,6 +160,29 @@ const toList = (value) => {
   }
   return Array.isArray(value) ? value.filter(Boolean) : [value]
 }
+
+const summarizeDatabaseMatches = (context) => {
+  if (!context) {
+    return []
+  }
+
+  const diseaseItems = (context.diseases || []).map((item) => {
+    const matches = toList(item.matched_fields).join('；')
+    return `疾病：${item.title}${matches ? `（${matches}）` : ''}`
+  })
+  const medicineItems = (context.medicines || []).map((item) => {
+    const matches = toList(item.matched_fields).join('；')
+    return `药品：${item.title}${matches ? `（${matches}）` : ''}`
+  })
+
+  return [...diseaseItems, ...medicineItems].slice(0, 6)
+}
+
+const summarizeRetrievedDocs = (docs) => (
+  toList(docs)
+    .map((doc) => `${doc.doc_type === 'medicine' ? '药品' : '疾病'}：${doc.title}（相似度 ${Number(doc.score || 0).toFixed(3)}）`)
+    .slice(0, 6)
+)
 
 const AnswerBlock = defineComponent({
   props: {
@@ -194,9 +228,23 @@ const AnswerBlock = defineComponent({
       ])
     }
 
+    const llmStatus = (llm) => {
+      if (!llm) {
+        return null
+      }
+
+      const text = llm.used
+        ? `视觉模型已参与识别：${llm.model || llm.provider || '已配置模型'}`
+        : `视觉模型未启用：${llm.error || '当前使用本地分析、数据库和RAG'}`
+
+      return h('p', { class: ['source-note', llm.used ? 'source-ok' : 'source-warn'] }, text)
+    }
+
     return () => {
       const value = answer.value
       const risk = value.risk_level || '未知'
+      const databaseMatches = summarizeDatabaseMatches(props.result.database_context)
+      const retrievedDocs = summarizeRetrievedDocs(props.result.retrieved_docs)
 
       return h('article', { class: ['answer-card', props.result.success ? 'ok' : 'error'] }, [
         h('div', { class: 'answer-heading' }, [
@@ -206,6 +254,7 @@ const AnswerBlock = defineComponent({
           ]),
           h('span', { class: ['risk-pill', `risk-${risk}`] }, `风险：${risk}`),
         ]),
+        llmStatus(props.result.llm),
         h('p', { class: 'conclusion' }, value.conclusion || props.result.message || '暂未生成结论。'),
         visitAdvice(value),
         section('可能的病状方向', value.possible_conditions),
@@ -213,6 +262,10 @@ const AnswerBlock = defineComponent({
         section('用药提醒', value.medication_reminder),
         section('需要立刻或尽快就医的情况', value.red_flags),
         section('系统依据', value.evidence),
+        section('画面观察', props.result.observations),
+        section('拍摄建议', props.result.capture_tips),
+        section('数据库命中', databaseMatches),
+        section('RAG检索依据', retrievedDocs),
         section('还需要补充的信息', value.follow_up_questions),
         h('p', { class: 'notice' }, value.medical_notice || props.result.medical_notice || '本结果不能替代医生诊断或药师指导。'),
       ])
@@ -221,6 +274,7 @@ const AnswerBlock = defineComponent({
 })
 
 const activeModule = ref('image')
+const multimodalStatus = ref(null)
 
 const imagePreview = ref('')
 const imageFileName = ref('')
@@ -250,6 +304,9 @@ const recognition = ref(null)
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
 const speechSupported = Boolean(SpeechRecognition)
+const multimodalStatusText = computed(() => (
+  multimodalStatus.value?.message || '正在检测多模态服务状态...'
+))
 
 if (!speechSupported) {
   voiceStatus.value = '当前浏览器不支持语音识别，可直接输入文字后分析'
@@ -285,6 +342,19 @@ const postJson = async (path, body) => {
   }
 
   return data
+}
+
+const loadMultimodalStatus = async () => {
+  try {
+    const response = await fetch(apiUrl('/api/multimodal/status'))
+    multimodalStatus.value = await response.json()
+  } catch (error) {
+    multimodalStatus.value = {
+      vision_llm_available: false,
+      message: '多模态状态获取失败，请检查后端服务。',
+    }
+    console.error(error)
+  }
 }
 
 const handleImageFile = async (event) => {
@@ -552,6 +622,10 @@ const analyzeVoice = async () => {
   }
 }
 
+onMounted(() => {
+  loadMultimodalStatus()
+})
+
 onBeforeUnmount(() => {
   recognition.value?.stop()
   if (videoUrl.value) {
@@ -582,6 +656,38 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 22px;
+}
+
+.status-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.status-panel div {
+  padding: 14px 16px;
+  background: #ffffff;
+  border: 1px solid #dbe6f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.status-panel strong,
+.status-panel span {
+  display: block;
+}
+
+.status-panel strong {
+  margin-bottom: 4px;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.status-panel span {
+  color: #475569;
+  line-height: 1.6;
 }
 
 .module-tabs button,
@@ -823,6 +929,26 @@ textarea:focus {
   margin-top: 10px;
   color: #475569;
   line-height: 1.7;
+}
+
+.source-note {
+  margin: -4px 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-weight: 800;
+  line-height: 1.6;
+}
+
+.source-ok {
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.source-warn {
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
 }
 
 .visit-advice {

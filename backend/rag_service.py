@@ -1,3 +1,5 @@
+import hashlib
+import os
 import re
 import faiss
 import numpy as np
@@ -9,6 +11,7 @@ index = None
 documents = []
 vocab = []
 term_to_id = {}
+vector_dimension = 4096
 
 
 # 检索分数阈值：太低的结果不返回，避免不相关知识混进回答
@@ -295,7 +298,19 @@ def build_vocab(docs):
         content_terms = extract_terms(doc.get("content", ""))
         vocab_set.update(content_terms)
 
-    return sorted(list(vocab_set))
+    return vocab_set
+
+
+def get_vector_dimension():
+    try:
+        return max(512, int(os.getenv("RAG_VECTOR_DIM", "4096")))
+    except ValueError:
+        return 4096
+
+
+def term_hash_id(term: str, dimension: int):
+    digest = hashlib.blake2b(term.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, "little") % dimension
 
 
 def vectorize_text(terms, keywords=None):
@@ -304,17 +319,17 @@ def vectorize_text(terms, keywords=None):
     terms：普通词，权重 1
     keywords：重要词，权重 3
     """
-    vector = np.zeros(len(vocab), dtype="float32")
+    vector = np.zeros(vector_dimension, dtype="float32")
 
     for term in terms:
-        if term in term_to_id:
-            vector[term_to_id[term]] += 1.0
+        if term in vocab:
+            vector[term_hash_id(term, vector_dimension)] += 1.0
 
     # 标题、症状、药品名称、用户问题命中词等重要关键词加权
     if keywords:
         for keyword in keywords:
-            if keyword in term_to_id:
-                vector[term_to_id[keyword]] += 3.0
+            if keyword in vocab:
+                vector[term_hash_id(keyword, vector_dimension)] += 3.0
 
     norm = np.linalg.norm(vector)
     if norm > 0:
@@ -327,7 +342,7 @@ def init_vector_store():
     """
     初始化 FAISS 向量库
     """
-    global index, documents, vocab, term_to_id
+    global index, documents, vocab, term_to_id, vector_dimension
 
     documents = build_documents()
 
@@ -335,16 +350,14 @@ def init_vector_store():
         raise ValueError("知识库为空，无法构建向量索引。")
 
     vocab = build_vocab(documents)
-    term_to_id = {term: i for i, term in enumerate(vocab)}
+    term_to_id = {}
+    vector_dimension = get_vector_dimension()
 
-    vectors = []
+    embeddings = np.zeros((len(documents), vector_dimension), dtype="float32")
 
-    for doc in documents:
+    for row_index, doc in enumerate(documents):
         terms = extract_terms(doc["content"])
-        vector = vectorize_text(terms, keywords=doc.get("keywords", []))
-        vectors.append(vector)
-
-    embeddings = np.array(vectors).astype("float32")
+        embeddings[row_index] = vectorize_text(terms, keywords=doc.get("keywords", []))
 
     dimension = embeddings.shape[1]
 
@@ -354,7 +367,8 @@ def init_vector_store():
     return {
         "doc_count": len(documents),
         "dimension": dimension,
-        "message": "使用轻量级关键词向量方式构建 FAISS 索引成功"
+        "vocab_size": len(vocab),
+        "message": "使用固定维度关键词哈希向量构建FAISS索引成功"
     }
 
 
@@ -408,52 +422,113 @@ def search_knowledge(question: str, top_k: int = 3, score_threshold: float = MIN
     return results
 
 
-def build_simple_answer(question: str, retrieved_docs: list):
+def filter_answer_docs(retrieved_docs: list, database_context=None, min_score: float = 0.02):
     """
-    根据检索结果生成简单结构化回答。
-    DeepSeek 不可用时，可以作为本地模板兜底。
+    过滤用于生成回答的RAG文档，避免低相似度噪声进入大模型或兜底模板。
+    数据库已经命中的同名记录会保留，便于和结构化记录交叉验证。
     """
-    if not retrieved_docs:
+    database_context = database_context or {}
+    matched_titles = {
+        item.get("title", "")
+        for item in (
+            database_context.get("diseases", [])
+            + database_context.get("medicines", [])
+        )
+    }
+    effective_min_score = 0.04 if matched_titles else min_score
+
+    filtered = []
+    for doc in retrieved_docs:
+        title = doc.get("title", "")
+        score = doc.get("score", 0)
+
+        if score >= effective_min_score or title in matched_titles:
+            filtered.append(doc)
+
+    return filtered
+
+
+def format_match_info(item):
+    matches = item.get("matched_fields", [])
+    if not matches:
+        return ""
+    return f"匹配依据：{'；'.join(matches)}\n"
+
+
+def build_simple_answer(question: str, retrieved_docs: list, database_context=None):
+    """
+    根据数据库命中和RAG检索结果生成简单结构化回答。
+    该回答作为大模型不可用时的兜底方案，仍然优先使用结构化数据库记录。
+    """
+    database_context = database_context or {}
+    db_disease_docs = database_context.get("diseases", [])
+    db_medicine_docs = database_context.get("medicines", [])
+
+    if not retrieved_docs and not db_disease_docs and not db_medicine_docs:
         return (
-            "知识库中暂未检索到足够相关的信息。"
-            "建议你补充更详细的症状描述，或咨询医生、药师。"
-            "本系统仅提供健康信息参考，不能替代医生诊断。"
+            "数据库和知识库中暂未检索到足够相关的信息。"
+            "建议你补充更详细的症状描述，例如主要不适、伴随症状、是否用药和特殊人群情况。"
+            "本系统仅提供健康信息参考，不能替代医生诊断或药师指导。"
         )
 
-    disease_docs = [doc for doc in retrieved_docs if doc["doc_type"] == "disease"]
-    medicine_docs = [doc for doc in retrieved_docs if doc["doc_type"] == "medicine"]
+    disease_docs = [doc for doc in retrieved_docs if doc.get("doc_type") == "disease"]
+    medicine_docs = [doc for doc in retrieved_docs if doc.get("doc_type") == "medicine"]
 
-    answer = "根据你描述的情况，系统从知识库中检索到了以下相关信息：\n\n"
+    answer = "根据你描述的情况，系统已结合数据库命中记录和RAG知识库检索结果，得到以下相关信息：\n\n"
 
-    if disease_docs:
-        answer += "一、可能相关的常见病方向：\n"
+    if db_disease_docs:
+        answer += "一、数据库命中的常见病方向：\n"
 
-        for doc in disease_docs:
-            raw = doc["raw"]
+        for item in db_disease_docs:
+            raw = item.get("raw", {})
 
             answer += f"\n【{raw.get('name', '')}】\n"
-            answer += f"匹配分数：{doc.get('score', 0):.4f}\n"
+            answer += format_match_info(item)
             answer += f"常见症状：{'、'.join(normalize_symptoms(raw.get('symptoms', [])))}\n"
             answer += f"症状说明：{raw.get('description', '')}\n"
             answer += f"日常护理：{raw.get('care_advice', '')}\n"
             answer += f"用药注意：{raw.get('medicine_notice', '')}\n"
             answer += f"就医提醒：{raw.get('warning', '')}\n"
 
-    if medicine_docs:
-        answer += "\n二、相关药品或用药注意：\n"
+    if db_medicine_docs:
+        answer += "\n二、数据库命中的药品或用药注意：\n"
 
-        for doc in medicine_docs:
-            raw = doc["raw"]
+        for item in db_medicine_docs:
+            raw = item.get("raw", {})
 
             answer += f"\n【{raw.get('name', '')}】\n"
-            answer += f"匹配分数：{doc.get('score', 0):.4f}\n"
+            answer += format_match_info(item)
             answer += f"药品类别：{raw.get('type', '')}\n"
             answer += f"适用情况：{raw.get('usage', '')}\n"
             answer += f"注意事项：{raw.get('notice', '')}\n"
             answer += f"禁忌人群：{raw.get('contraindication', '')}\n"
             answer += f"不良反应：{raw.get('side_effect', '')}\n"
 
-    answer += "\n三、系统提示：\n"
+    shown_titles = {
+        item.get("title", "")
+        for item in db_disease_docs + db_medicine_docs
+    }
+    rag_supplements = [
+        doc for doc in disease_docs + medicine_docs
+        if doc.get("title", "") not in shown_titles
+    ]
+
+    if rag_supplements:
+        answer += "\n三、RAG知识库补充：\n"
+
+        for doc in rag_supplements[:3]:
+            raw = doc.get("raw", {})
+            if doc.get("doc_type") == "disease":
+                answer += f"\n【{raw.get('name', doc.get('title', ''))}】\n"
+                answer += f"常见症状：{'、'.join(raw.get('symptoms', []))}\n"
+                answer += f"护理建议：{raw.get('care_advice', '')}\n"
+                answer += f"就医提醒：{raw.get('warning', '')}\n"
+            else:
+                answer += f"\n【{raw.get('name', doc.get('title', ''))}】\n"
+                answer += f"适用情况：{raw.get('usage', '')}\n"
+                answer += f"注意事项：{raw.get('notice', '')}\n"
+
+    answer += "\n四、系统提示：\n"
     answer += (
         "本系统仅提供健康信息参考，不能替代医生诊断或药师指导。"
         "如症状持续加重、出现高热不退、呼吸困难、胸痛、意识异常等情况，应及时就医。"
