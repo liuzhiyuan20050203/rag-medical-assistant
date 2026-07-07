@@ -3,7 +3,7 @@
     <div class="page-title">
       <h2>问答历史记录</h2>
       <p>
-        系统会自动保存最近的症状自查记录，便于查看用户问题、系统回答、危险提醒和检索结果。
+        系统会自动保存最近的 AI 医疗助手对话，便于查看用户问题、系统回答、危险提醒和检索结果。
       </p>
     </div>
 
@@ -18,13 +18,27 @@
     </div>
 
     <div v-if="historyList.length === 0" class="empty">
-      暂无历史记录，请先到“症状自查”页面进行测试。
+      暂无历史记录，请先到“AI 助手”页面进行咨询。
     </div>
 
     <div v-for="item in historyList" :key="item.id" class="history-card">
       <div class="card-header">
-        <strong>问题：{{ item.question }}</strong>
-        <span>{{ item.create_time }}</span>
+        <div>
+          <strong>问题：{{ displayQuestion(item.question) }}</strong>
+          <span>{{ item.create_time }}</span>
+        </div>
+        <button
+          v-if="item.session_id"
+          type="button"
+          class="continue-btn"
+          @click="continueConversation(item.session_id)"
+        >
+          继续对话
+        </button>
+      </div>
+
+      <div v-if="hasImageInput(item.question)" class="input-tag">
+        已上传图片，图片识别信息已作为 AI 分析输入。
       </div>
 
       <div
@@ -95,11 +109,22 @@
 
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { apiUrl } from '../api'
 
+const router = useRouter()
 const historyList = ref([])
 const loading = ref(false)
 const feedbackDrafts = reactive({})
+
+const authHeaders = (extra = {}) => {
+  const token = localStorage.getItem('ragToken') || ''
+
+  return {
+    ...extra,
+    Authorization: `Bearer ${token}`,
+  }
+}
 
 const getDraft = (item) => {
   if (!feedbackDrafts[item.id]) {
@@ -121,11 +146,34 @@ const syncFeedbackDrafts = () => {
   })
 }
 
+const displayQuestion = (question = '') => {
+  const text = String(question || '').trim()
+  const [userText] = text.split('图片识别描述：')
+  const cleaned = userText.replace(/。+$/g, '').trim()
+
+  if (cleaned) {
+    return cleaned
+  }
+
+  if (hasImageInput(text)) {
+    return '图片咨询'
+  }
+
+  return text
+}
+
+const hasImageInput = (question = '') => {
+  const text = String(question || '')
+  return text.includes('图片识别描述：') || text.includes('图片识别标签：')
+}
+
 const loadHistory = async () => {
   loading.value = true
 
   try {
-    const response = await fetch(apiUrl('/api/history/list'))
+    const response = await fetch(apiUrl('/api/history/list'), {
+      headers: authHeaders(),
+    })
     const data = await response.json()
 
     historyList.value = data.data || []
@@ -148,6 +196,7 @@ const clearHistory = async () => {
   try {
     await fetch(apiUrl('/api/history/clear'), {
       method: 'POST',
+      headers: authHeaders(),
     })
 
     historyList.value = []
@@ -155,6 +204,15 @@ const clearHistory = async () => {
     alert('清空失败，请检查后端服务是否正常运行。')
     console.error(error)
   }
+}
+
+const continueConversation = (sessionId) => {
+  router.push({
+    path: '/chat',
+    query: {
+      session_id: sessionId,
+    },
+  })
 }
 
 const submitFeedback = async (recordId) => {
@@ -168,9 +226,9 @@ const submitFeedback = async (recordId) => {
   try {
     const response = await fetch(apiUrl(`/api/history/${recordId}/feedback`), {
       method: 'POST',
-      headers: {
+      headers: authHeaders({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({
         rating: draft.rating,
         feedback_text: draft.feedbackText,
@@ -255,11 +313,18 @@ button:disabled {
 
 .card-header {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   border-bottom: 1px solid #e5e7eb;
   padding-bottom: 14px;
   margin-bottom: 16px;
+}
+
+.card-header > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
 }
 
 .card-header strong {
@@ -269,6 +334,33 @@ button:disabled {
 .card-header span {
   color: #6b7280;
   font-size: 14px;
+}
+
+.continue-btn {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 14px;
+  color: #0f766e;
+  background: #ccfbf1;
+  border: 1px solid #99f6e4;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.continue-btn:hover {
+  background: #99f6e4;
+}
+
+.input-tag {
+  width: max-content;
+  margin-bottom: 14px;
+  padding: 6px 10px;
+  color: #075985;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .warning {
@@ -402,6 +494,10 @@ pre {
 }
 
 @media (max-width: 640px) {
+  .card-header {
+    flex-direction: column;
+  }
+
   .feedback-title {
     align-items: flex-start;
     flex-direction: column;

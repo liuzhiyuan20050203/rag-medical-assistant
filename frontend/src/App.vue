@@ -9,19 +9,17 @@
         </span>
 
         <span>
-          <strong>RAG 智慧医疗助手</strong>
-          <small>常见病自查与用药指南</small>
+          <strong>AI 医疗 Agent 助手</strong>
+          <small>症状咨询 · 用药核对 · 图片语音输入</small>
         </span>
       </RouterLink>
 
       <nav class="nav" aria-label="主导航">
         <RouterLink to="/">首页</RouterLink>
-        <RouterLink to="/chat">症状自查</RouterLink>
-        <RouterLink to="/medicine">用药查询</RouterLink>
-        <RouterLink to="/multimodal">多模态识别</RouterLink>
+        <RouterLink to="/chat">AI 助手</RouterLink>
         <RouterLink to="/knowledge">知识库</RouterLink>
         <RouterLink to="/history">历史记录</RouterLink>
-        <RouterLink to="/analytics">可视化分析</RouterLink>
+        <RouterLink v-if="isAdmin" to="/analytics">数据分析</RouterLink>
         <RouterLink v-if="isAdmin" to="/admin">管理后台</RouterLink>
         <RouterLink to="/login">登录/注册</RouterLink>
       </nav>

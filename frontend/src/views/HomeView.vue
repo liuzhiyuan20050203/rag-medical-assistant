@@ -3,28 +3,28 @@
     <section class="hero" aria-labelledby="home-title">
       <div class="hero-copy">
         <p class="eyebrow">RAG MEDICAL ASSISTANT</p>
-        <h1 id="home-title">医院级导诊与安全用药参考</h1>
+        <h1 id="home-title">AI 医疗 Agent 智能助手</h1>
         <p>
-          面向常见轻微症状，系统会先筛查胸痛、呼吸困难、高热不退等危险信号，
-          再结合常见病与药品知识库生成结构化参考建议，帮助用户更快判断下一步。
+          将文字、语音、图片线索统一交给 Agent 调度，先识别危险信号，
+          再结合常见病与药品知识库生成结构化参考建议。
         </p>
 
         <div class="actions">
-          <RouterLink class="btn primary" to="/chat">开始症状自查</RouterLink>
-          <RouterLink class="btn" to="/medicine">进入药品查询</RouterLink>
+          <RouterLink class="btn primary" to="/chat">进入 AI 医疗助手</RouterLink>
+          <RouterLink class="btn" to="/knowledge">查看知识库</RouterLink>
         </div>
 
         <div class="hero-tags" aria-label="核心能力">
           <span>危险症状优先分诊</span>
-          <span>常见病知识检索</span>
-          <span>药师级用药提示</span>
+          <span>RAG 知识库检索</span>
+          <span>语音 / 图片 / 文本输入</span>
         </div>
       </div>
 
       <div class="hospital-visual" aria-hidden="true">
         <div class="building">
           <div class="building-top">
-            <span>门诊导诊台</span>
+            <span>Agent 调度台</span>
             <svg viewBox="0 0 24 24">
               <path d="M9.2 3.8h5.6v5.4h5.4v5.6h-5.4v5.4H9.2v-5.4H3.8V9.2h5.4z" />
             </svg>
@@ -49,13 +49,13 @@
         </div>
 
         <div class="pharmacy-card">
-          <span>智慧药房</span>
+          <span>统一咨询入口</span>
           <div class="capsules">
             <i></i>
             <i></i>
             <i></i>
           </div>
-          <strong>禁忌 / 不良反应 / 注意事项</strong>
+          <strong>症状 / 药品 / 图片线索</strong>
         </div>
       </div>
     </section>
@@ -95,7 +95,7 @@
     <section class="workflow">
       <div class="section-heading">
         <p class="eyebrow">CLINICAL WORKFLOW</p>
-        <h2>从症状到用药的清晰路径</h2>
+        <h2>从用户输入到可靠回答的 Agent 流程</h2>
       </div>
 
       <div class="route-grid">
@@ -113,11 +113,11 @@
 
     <section class="pharmacy-band" aria-labelledby="pharmacy-title">
       <div>
-        <p class="eyebrow">PHARMACY SAFETY</p>
-        <h2 id="pharmacy-title">把药品信息做成可读的安全清单</h2>
+        <p class="eyebrow">AGENT WORKSPACE</p>
+        <h2 id="pharmacy-title">把独立功能收束到一个对话入口</h2>
         <p>
-          查询药品时，页面会把适用情况、禁忌人群、注意事项、不良反应拆开呈现，
-          更适合用户和药师快速核对。
+          用户不需要区分症状咨询、用药核对或图片识别，直接在 AI 医疗助手中输入即可。
+          管理员仍可在后台查看 Agent 调度、检索日志和知识库补充入口。
         </p>
       </div>
 

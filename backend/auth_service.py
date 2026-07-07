@@ -1,8 +1,12 @@
 import hashlib
 import json
+import os
 import secrets
 from pathlib import Path
 from datetime import datetime
+
+import pymysql
+from dotenv import load_dotenv
 
 from storage import is_database_enabled, load_json_data, save_json_data
 
@@ -12,6 +16,8 @@ USER_FILE = BASE_DIR / "data" / "users.json"
 SESSION_FILE = BASE_DIR / "data" / "sessions.json"
 PASSWORD_SALT = "rag-medical-assistant-demo"
 
+load_dotenv(BASE_DIR / ".env", override=True)
+
 
 def hash_password(password: str):
     return hashlib.sha256(f"{PASSWORD_SALT}:{password}".encode("utf-8")).hexdigest()
@@ -19,6 +25,49 @@ def hash_password(password: str):
 
 def now_text():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def get_connection():
+    return pymysql.connect(
+        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
+        port=int(os.getenv("MYSQL_PORT", "3306")),
+        user=os.getenv("MYSQL_USER", "root"),
+        password=os.getenv("MYSQL_PASSWORD", ""),
+        database=os.getenv("MYSQL_DATABASE", "rag_medical"),
+        charset=os.getenv("MYSQL_CHARSET", "utf8mb4"),
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=True
+    )
+
+
+def ensure_user_identity(user):
+    """
+    将兼容 JSON 存储里的登录用户同步到规范 users 表，返回稳定 user_id。
+    """
+    username = (user or {}).get("username", "").strip()
+    if not username or not is_database_enabled():
+        return None
+
+    password_hash = (user or {}).get("password_hash") or hash_password(secrets.token_urlsafe(12))
+    role = normalize_role((user or {}).get("role", "user"))
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO users (username, password_hash, role)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    password_hash = VALUES(password_hash),
+                    role = VALUES(role),
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (username, password_hash, role)
+            )
+            cursor.execute("SELECT id FROM users WHERE username = %s LIMIT 1", (username,))
+            row = cursor.fetchone()
+
+    return row.get("id") if row else None
 
 
 def default_users():
@@ -112,7 +161,10 @@ def save_sessions(sessions):
 
 
 def public_user(user):
+    user_id = ensure_user_identity(user)
+
     return {
+        "id": user_id,
         "username": user.get("username", ""),
         "role": user.get("role", "user"),
         "active": user.get("active", True),

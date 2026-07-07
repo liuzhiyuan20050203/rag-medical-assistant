@@ -51,6 +51,151 @@
 
     <p v-if="statusMessage" class="status-message">{{ statusMessage }}</p>
 
+    <section class="agent-log-panel">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">AGENT OBSERVABILITY</p>
+          <h3>会话与 Agent 调度日志</h3>
+        </div>
+      </div>
+
+      <div class="agent-log-grid">
+        <article>
+          <div class="mini-heading">
+            <strong>最近会话</strong>
+            <span>{{ conversationSessions.length }} 条</span>
+          </div>
+
+          <div v-if="conversationSessions.length === 0" class="empty-state">
+            暂无多轮会话记录。
+          </div>
+
+          <div v-else class="mini-list">
+            <div v-for="item in conversationSessions.slice(0, 6)" :key="item.id" class="mini-row">
+              <strong>{{ item.title }}</strong>
+              <span>会话 #{{ item.id }} · 消息 {{ item.message_count }} · 用户 {{ item.user_id || '未登录' }}</span>
+            </div>
+          </div>
+        </article>
+
+        <article>
+          <div class="mini-heading">
+            <strong>最近 Agent 运行</strong>
+            <span>{{ agentRuns.length }} 条</span>
+          </div>
+
+          <div v-if="agentRuns.length === 0" class="empty-state">
+            暂无 Agent 调度日志。
+          </div>
+
+          <div v-else class="mini-list">
+            <div v-for="item in agentRuns.slice(0, 6)" :key="item.id" class="mini-row">
+              <strong>{{ item.action || 'unknown' }} / {{ item.intent || 'unknown' }}</strong>
+              <span>
+                运行 #{{ item.id }} · 会话 #{{ item.session_id }} · 可靠性 {{ Math.round((item.confidence || 0) * 100) }}%
+              </span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="review-workbench">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">KNOWLEDGE GAP REVIEW</p>
+          <h3>待补充知识库 / 错误样本</h3>
+          <span class="section-help">
+            自动汇总低可靠性、药品库缺失、图片待复核和用户差评样本，用于定位知识库缺口。
+          </span>
+        </div>
+
+        <div class="tabs">
+          <button
+            v-for="filter in reviewFilters"
+            :key="filter.value"
+            type="button"
+            :class="{ active: activeReviewFilter === filter.value }"
+            @click="activeReviewFilter = filter.value"
+          >
+            {{ filter.label }}
+          </button>
+        </div>
+      </div>
+
+      <div class="review-summary">
+        <article>
+          <strong>{{ pendingIssues.length }}</strong>
+          <span>待处理</span>
+        </article>
+        <article>
+          <strong>{{ issueTypeCount('药品库缺失') }}</strong>
+          <span>药品库缺失</span>
+        </article>
+        <article>
+          <strong>{{ issueTypeCount('RAG低命中') }}</strong>
+          <span>RAG低命中</span>
+        </article>
+        <article>
+          <strong>{{ issueTypeCount('图片识别待复核') }}</strong>
+          <span>图片复核</span>
+        </article>
+      </div>
+
+      <div v-if="filteredIssues.length === 0" class="empty-state">
+        当前筛选下暂无待处理样本。
+      </div>
+
+      <div v-else class="issue-list">
+        <article v-for="item in filteredIssues" :key="item.record_id" class="issue-card">
+          <div class="issue-head">
+            <div>
+              <span :class="['issue-tag', issueTagClass(item.issue_type)]">
+                {{ item.issue_type }}
+              </span>
+              <strong>{{ item.keyword || '待补充条目' }}</strong>
+            </div>
+            <small>{{ item.create_time }}</small>
+          </div>
+
+          <p class="issue-question">{{ item.question }}</p>
+
+          <div class="issue-meta">
+            <span>可靠性：{{ Math.round((item.confidence || 0) * 100) }}%</span>
+            <span>检索数：{{ item.retrieved_count }}</span>
+            <span>最高分：{{ item.top_score }}</span>
+            <span v-if="item.rating">评分：{{ item.rating }} 星</span>
+            <span v-if="item.action">动作：{{ item.action }}</span>
+          </div>
+
+          <p class="issue-fix">{{ item.suggested_fix }}</p>
+          <p v-if="item.feedback_text" class="feedback-note">用户反馈：{{ item.feedback_text }}</p>
+          <p v-if="item.error_reason" class="feedback-note">管理员标注：{{ item.error_reason }}</p>
+
+          <div class="issue-actions">
+            <button
+              type="button"
+              class="draft-btn"
+              @click="fillKnowledgeDraft(item, item.suggested_category === 'medicine' ? 'medicine' : 'disease')"
+            >
+              {{ item.suggested_category === 'medicine' ? '生成药品库草稿' : '生成疾病库草稿' }}
+            </button>
+            <button
+              v-if="activeReviewFilter !== 'all'"
+              type="button"
+              class="ghost-btn"
+              @click="showAllIssues"
+            >
+              查看全部
+            </button>
+            <button v-else type="button" class="ghost-btn" @click="loadReviewIssues">
+              刷新样本
+            </button>
+          </div>
+        </article>
+      </div>
+    </section>
+
     <section class="user-panel">
       <div class="section-title">
         <div>
@@ -128,7 +273,7 @@
       </div>
     </section>
 
-    <section class="upload-grid" aria-label="知识文档上传">
+    <section ref="uploadSectionRef" class="upload-grid" aria-label="知识文档上传">
       <article class="upload-card">
         <div class="card-heading">
           <span>01</span>
@@ -148,6 +293,24 @@
           {{ uploads.disease.loading ? '上传中...' : '写入疾病知识库' }}
         </button>
         <small v-if="uploads.disease.message">{{ uploads.disease.message }}</small>
+        <div v-if="uploads.disease.result" class="upload-result">
+          <div class="upload-summary">
+            <span>新增 {{ uploads.disease.result.summary.created }}</span>
+            <span>更新 {{ uploads.disease.result.summary.updated }}</span>
+            <span>疑似重复 {{ uploads.disease.result.summary.similar }}</span>
+          </div>
+
+          <article v-for="item in uploads.disease.result.data" :key="item.name" class="upload-row">
+            <strong>{{ item.name }}</strong>
+            <span :class="['upload-status', item.status]">
+              {{ item.status === 'created' ? '新增' : '更新已有' }}
+            </span>
+            <p v-if="item.duplicate_of">同名记录：{{ item.duplicate_of.name }}，本次已覆盖更新。</p>
+            <p v-if="item.similar_duplicates?.length">
+              疑似重复：{{ item.similar_duplicates.map((dup) => dup.name).join('、') }}
+            </p>
+          </article>
+        </div>
       </article>
 
       <article class="upload-card">
@@ -169,7 +332,60 @@
           {{ uploads.medicine.loading ? '上传中...' : '写入药品知识库' }}
         </button>
         <small v-if="uploads.medicine.message">{{ uploads.medicine.message }}</small>
+        <div v-if="uploads.medicine.result" class="upload-result">
+          <div class="upload-summary">
+            <span>新增 {{ uploads.medicine.result.summary.created }}</span>
+            <span>更新 {{ uploads.medicine.result.summary.updated }}</span>
+            <span>疑似重复 {{ uploads.medicine.result.summary.similar }}</span>
+          </div>
+
+          <article v-for="item in uploads.medicine.result.data" :key="item.name" class="upload-row">
+            <strong>{{ item.name }}</strong>
+            <span :class="['upload-status', item.status]">
+              {{ item.status === 'created' ? '新增' : '更新已有' }}
+            </span>
+            <p v-if="item.duplicate_of">同名记录：{{ item.duplicate_of.name }}，本次已覆盖更新。</p>
+            <p v-if="item.similar_duplicates?.length">
+              疑似重复：{{ item.similar_duplicates.map((dup) => dup.name).join('、') }}
+            </p>
+          </article>
+        </div>
       </article>
+    </section>
+
+    <section class="delete-panel">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">KNOWLEDGE DELETE</p>
+          <h3>搜索并删除知识</h3>
+        </div>
+      </div>
+
+      <form class="delete-search" @submit.prevent="searchDeleteCandidates">
+        <select v-model="deleteTool.kind">
+          <option value="disease">疾病知识</option>
+          <option value="medicine">药品说明</option>
+        </select>
+        <input v-model="deleteTool.keyword" placeholder="输入名称、症状、分类或适用情况关键词" />
+        <button type="submit" :disabled="deleteTool.loading">
+          {{ deleteTool.loading ? '搜索中...' : '搜索' }}
+        </button>
+      </form>
+
+      <p v-if="deleteTool.message" class="delete-message">{{ deleteTool.message }}</p>
+
+      <div v-if="deleteTool.results.length" class="delete-list">
+        <article v-for="item in deleteTool.results" :key="`${deleteTool.kind}-${item.id}`" class="delete-card">
+          <div>
+            <strong>{{ item.name }}</strong>
+            <span>{{ deleteTool.kind === 'disease' ? item.category : item.type }}</span>
+          </div>
+          <p>{{ deleteTool.kind === 'disease' ? item.description : item.usage }}</p>
+          <button type="button" class="delete-knowledge" @click="deleteKnowledgeItem(item)">
+            删除
+          </button>
+        </article>
+      </div>
     </section>
 
     <section class="admin-grid">
@@ -279,7 +495,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { apiUrl } from '../api'
 
 const user = ref(null)
@@ -287,11 +503,25 @@ const loading = ref(false)
 const indexLoading = ref(false)
 const statusMessage = ref('')
 const historyList = ref([])
+const issueList = ref([])
+const conversationSessions = ref([])
+const agentRuns = ref([])
 const users = ref([])
 const userSaving = ref(false)
 const activeKnowledge = ref('disease')
+const activeReviewFilter = ref('needs_review')
+const uploadSectionRef = ref(null)
 const errorReasons = reactive({})
 const userEdits = reactive({})
+
+const reviewFilters = [
+  { label: '待处理', value: 'needs_review' },
+  { label: '药品库缺失', value: 'medicine' },
+  { label: 'RAG低命中', value: 'rag' },
+  { label: '图片复核', value: 'image' },
+  { label: '差评/标错', value: 'bad' },
+  { label: '全部', value: 'all' },
+]
 
 const userForm = reactive({
   username: '',
@@ -318,13 +548,23 @@ const uploads = reactive({
     content: '',
     loading: false,
     message: '',
+    result: null,
   },
   medicine: {
     fileName: '',
     content: '',
     loading: false,
     message: '',
+    result: null,
   },
+})
+
+const deleteTool = reactive({
+  kind: 'medicine',
+  keyword: '',
+  loading: false,
+  message: '',
+  results: [],
 })
 
 const isAdmin = computed(() => user.value?.role === 'admin')
@@ -359,6 +599,36 @@ const visibleKnowledge = computed(() => {
   return knowledge.value.warning_rules
 })
 
+const pendingIssues = computed(() => issueList.value.filter((item) => item.needs_review))
+
+const filteredIssues = computed(() => {
+  const list = issueList.value
+
+  if (activeReviewFilter.value === 'needs_review') {
+    return list.filter((item) => item.needs_review)
+  }
+
+  if (activeReviewFilter.value === 'medicine') {
+    return list.filter((item) => item.issue_type === '药品库缺失')
+  }
+
+  if (activeReviewFilter.value === 'rag') {
+    return list.filter((item) => item.issue_type === 'RAG低命中')
+  }
+
+  if (activeReviewFilter.value === 'image') {
+    return list.filter((item) => item.issue_type === '图片识别待复核')
+  }
+
+  if (activeReviewFilter.value === 'bad') {
+    return list.filter((item) => item.is_error || item.rating === 1 || item.rating === 2)
+  }
+
+  return list
+})
+
+const issueTypeCount = (type) => issueList.value.filter((item) => item.issue_type === type).length
+
 const knowledgeKey = (item) => {
   if (typeof item === 'string') {
     return item
@@ -391,7 +661,14 @@ const loadAdminData = async () => {
   statusMessage.value = ''
 
   try {
-    const [knowledgeResponse, historyResponse, usersResponse] = await Promise.all([
+    const [
+      knowledgeResponse,
+      historyResponse,
+      usersResponse,
+      issuesResponse,
+      sessionsResponse,
+      runsResponse,
+    ] = await Promise.all([
       fetch(apiUrl('/api/admin/knowledge'), {
         headers: authHeaders(),
       }),
@@ -401,13 +678,28 @@ const loadAdminData = async () => {
       fetch(apiUrl('/api/admin/users'), {
         headers: authHeaders(),
       }),
+      fetch(apiUrl('/api/admin/review/issues'), {
+        headers: authHeaders(),
+      }),
+      fetch(apiUrl('/api/admin/conversations/sessions'), {
+        headers: authHeaders(),
+      }),
+      fetch(apiUrl('/api/admin/agent/runs'), {
+        headers: authHeaders(),
+      }),
     ])
 
     knowledge.value = await parseAdminResponse(knowledgeResponse)
     const historyData = await parseAdminResponse(historyResponse)
     const usersData = await parseAdminResponse(usersResponse)
+    const issuesData = await parseAdminResponse(issuesResponse)
+    const sessionsData = await parseAdminResponse(sessionsResponse)
+    const runsData = await parseAdminResponse(runsResponse)
     historyList.value = historyData.data || []
     users.value = usersData.data || []
+    issueList.value = issuesData.data || []
+    conversationSessions.value = sessionsData.data || []
+    agentRuns.value = runsData.data || []
     syncUserEdits()
   } catch (error) {
     console.error(error)
@@ -509,12 +801,80 @@ const handleFile = (event, kind) => {
 
   uploads[kind].fileName = file.name
   uploads[kind].message = `已选择：${file.name}`
+  uploads[kind].result = null
 
   const reader = new FileReader()
   reader.onload = () => {
     uploads[kind].content = String(reader.result || '')
   }
   reader.readAsText(file, 'utf-8')
+}
+
+const issueTagClass = (type) => {
+  if (type === '药品库缺失') return 'medicine'
+  if (type === '图片识别待复核') return 'image'
+  if (type === '用户差评/已标错') return 'bad'
+  if (type === 'RAG低命中') return 'rag'
+  return 'neutral'
+}
+
+const scrollToUploadSection = async () => {
+  await nextTick()
+  uploadSectionRef.value?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'start',
+  })
+}
+
+const showAllIssues = () => {
+  activeReviewFilter.value = 'all'
+  statusMessage.value = '已切换为查看全部待复核样本。'
+}
+
+const fillKnowledgeDraft = async (item, kind) => {
+  const keyword = item.keyword || '待补充条目'
+
+  if (kind === 'medicine') {
+    uploads.medicine.fileName = `${keyword}-medicine-draft.json`
+    uploads.medicine.content = JSON.stringify(
+      {
+        name: keyword,
+        type: '待补充药品类别',
+        usage: `根据用户问题补充：${item.question}`,
+        notice: '请根据药品说明书补充注意事项。',
+        contraindication: '请根据药品说明书补充禁忌人群。',
+        side_effect: '请根据药品说明书补充不良反应。',
+        source: '管理员根据低置信度样本补充',
+      },
+      null,
+      2,
+    )
+    uploads.medicine.message = '已生成药品库草稿，请核对说明书后写入。'
+    activeKnowledge.value = 'medicine'
+    statusMessage.value = '药品库草稿已生成，已定位到下方上传区域，请核对后写入。'
+    await scrollToUploadSection()
+    return
+  }
+
+  uploads.disease.fileName = `${keyword}-disease-draft.json`
+  uploads.disease.content = JSON.stringify(
+    {
+      name: keyword,
+      category: '待补充分类',
+      symptoms: ['待补充症状'],
+      description: `根据用户问题补充：${item.question}`,
+      care_advice: '请补充家庭护理和观察建议。',
+      medicine_notice: '请补充用药注意，避免直接替代医生诊断。',
+      warning: '请补充需要及时就医的危险信号。',
+      source: '管理员根据低置信度样本补充',
+    },
+    null,
+    2,
+  )
+  uploads.disease.message = '已生成疾病库草稿，请补全并核对后写入。'
+  activeKnowledge.value = 'disease'
+  statusMessage.value = '疾病知识草稿已生成，已定位到下方上传区域，请核对后写入。'
+  await scrollToUploadSection()
 }
 
 const uploadDoc = async (kind) => {
@@ -527,6 +887,7 @@ const uploadDoc = async (kind) => {
 
   target.loading = true
   target.message = ''
+  target.result = null
 
   try {
     const response = await fetch(apiUrl(`/api/admin/upload/${kind}`), {
@@ -542,6 +903,12 @@ const uploadDoc = async (kind) => {
 
     const data = await parseAdminResponse(response)
     target.message = data.message
+    target.result = data.success
+      ? {
+          summary: data.summary || { created: 0, updated: 0, similar: 0 },
+          data: data.data || [],
+        }
+      : null
 
     if (data.success) {
       target.content = ''
@@ -553,6 +920,72 @@ const uploadDoc = async (kind) => {
     target.message = '上传失败，请检查后端服务是否正常运行。'
   } finally {
     target.loading = false
+  }
+}
+
+const searchDeleteCandidates = async () => {
+  if (!deleteTool.keyword.trim()) {
+    deleteTool.message = '请输入要搜索的关键词。'
+    deleteTool.results = []
+    return
+  }
+
+  deleteTool.loading = true
+  deleteTool.message = ''
+  deleteTool.results = []
+
+  try {
+    const response = await fetch(apiUrl('/api/admin/knowledge/search'), {
+      method: 'POST',
+      headers: authHeaders({
+        'Content-Type': 'application/json',
+      }),
+      body: JSON.stringify({
+        kind: deleteTool.kind,
+        keyword: deleteTool.keyword,
+      }),
+    })
+
+    const data = await parseAdminResponse(response)
+    deleteTool.message = data.message
+    deleteTool.results = data.data || []
+  } catch (error) {
+    console.error(error)
+    deleteTool.message = '搜索失败，请检查后端服务是否正常运行。'
+  } finally {
+    deleteTool.loading = false
+  }
+}
+
+const deleteKnowledgeItem = async (item) => {
+  const kindLabel = deleteTool.kind === 'disease' ? '疾病知识' : '药品说明'
+
+  if (!confirm(`确定删除${kindLabel}“${item.name}”吗？删除后需要更新向量索引。`)) {
+    return
+  }
+
+  deleteTool.loading = true
+  deleteTool.message = ''
+
+  try {
+    const response = await fetch(apiUrl(`/api/admin/knowledge/${deleteTool.kind}/${item.id}`), {
+      method: 'DELETE',
+      headers: authHeaders(),
+    })
+
+    const data = await parseAdminResponse(response)
+    deleteTool.message = data.message
+
+    if (data.success) {
+      deleteTool.results = deleteTool.results.filter((candidate) => candidate.id !== item.id)
+      statusMessage.value = '知识已删除。请点击“更新向量索引”，同步 RAG 检索结果。'
+      await loadAdminData()
+    }
+  } catch (error) {
+    console.error(error)
+    deleteTool.message = '删除失败，请检查后端服务是否正常运行。'
+  } finally {
+    deleteTool.loading = false
   }
 }
 
@@ -610,7 +1043,10 @@ onMounted(() => {
 
 .access-gate,
 .admin-hero,
+.agent-log-panel,
+.review-workbench,
 .user-panel,
+.delete-panel,
 .upload-card,
 .knowledge-panel,
 .history-panel {
@@ -747,11 +1183,294 @@ button:disabled {
   font-weight: 800;
 }
 
+.agent-log-panel {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+}
+
+.agent-log-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.agent-log-grid > article {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  background: #f8fbfd;
+  border: 1px solid #e4edf3;
+  border-radius: 8px;
+}
+
+.mini-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mini-heading strong {
+  color: var(--text-primary);
+  font-weight: 900;
+}
+
+.mini-heading span {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.mini-list {
+  display: grid;
+  gap: 8px;
+}
+
+.mini-row {
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.mini-row strong,
+.mini-row span {
+  display: block;
+}
+
+.mini-row strong {
+  color: var(--text-primary);
+  font-weight: 900;
+}
+
+.mini-row span {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.review-workbench {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+}
+
+.review-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.review-summary article {
+  padding: 14px 16px;
+  background: #f8fbfd;
+  border: 1px solid #e4edf3;
+  border-radius: 8px;
+}
+
+.review-summary strong,
+.review-summary span {
+  display: block;
+}
+
+.review-summary strong {
+  color: var(--medical-blue);
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.review-summary span {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.issue-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.issue-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.issue-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.issue-head > div {
+  display: grid;
+  gap: 8px;
+}
+
+.issue-head strong {
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.issue-head small {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-weight: 800;
+}
+
+.issue-tag {
+  width: max-content;
+  padding: 4px 9px;
+  color: var(--text-secondary);
+  background: #f1f5f9;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.issue-tag.medicine {
+  color: #92400e;
+  background: #fffbeb;
+}
+
+.issue-tag.rag {
+  color: #075985;
+  background: #eff6ff;
+}
+
+.issue-tag.image {
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.issue-tag.bad {
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+.issue-question,
+.issue-fix {
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.issue-question {
+  padding: 10px 12px;
+  background: #f8fbfd;
+  border: 1px solid #e4edf3;
+  border-radius: 8px;
+}
+
+.issue-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.issue-meta span {
+  padding: 4px 8px;
+  color: var(--text-secondary);
+  background: #f1f5f9;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.issue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.draft-btn {
+  background: var(--pharmacy-teal);
+}
+
+.ghost-btn {
+  color: var(--text-secondary);
+  background: #ffffff;
+  border: 1px solid var(--border);
+}
+
 .upload-grid,
 .admin-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 18px;
+}
+
+.delete-panel {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+}
+
+.delete-search {
+  display: grid;
+  grid-template-columns: 160px minmax(220px, 1fr) auto;
+  gap: 12px;
+}
+
+.delete-message {
+  padding: 10px 12px;
+  color: #075985;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  font-weight: 800;
+}
+
+.delete-list {
+  display: grid;
+  gap: 10px;
+}
+
+.delete-card {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(240px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  background: #f8fbfd;
+  border: 1px solid #e4edf3;
+  border-radius: 8px;
+}
+
+.delete-card strong,
+.delete-card span {
+  display: block;
+}
+
+.delete-card strong {
+  color: var(--text-primary);
+  font-weight: 900;
+}
+
+.delete-card span {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.delete-card p {
+  max-height: 72px;
+  overflow: auto;
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+.delete-knowledge {
+  background: var(--danger);
 }
 
 .user-panel {
@@ -875,6 +1594,16 @@ button:disabled {
   font-weight: 900;
 }
 
+.section-help {
+  display: block;
+  max-width: 620px;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.7;
+  font-weight: 700;
+}
+
 input,
 select,
 textarea {
@@ -919,6 +1648,68 @@ textarea:focus {
 .upload-card small {
   color: var(--pharmacy-teal);
   font-weight: 800;
+}
+
+.upload-result {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: #f8fbfd;
+  border: 1px solid #e4edf3;
+  border-radius: 8px;
+}
+
+.upload-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.upload-summary span {
+  padding: 4px 8px;
+  color: var(--text-secondary);
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.upload-row {
+  display: grid;
+  gap: 7px;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.upload-row strong {
+  color: var(--text-primary);
+  font-weight: 900;
+}
+
+.upload-row p {
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+.upload-status {
+  width: max-content;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.upload-status.created {
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.upload-status.updated {
+  color: #92400e;
+  background: #fffbeb;
 }
 
 .knowledge-panel,
@@ -1074,7 +1865,15 @@ pre {
   }
 
   .user-create,
-  .user-row {
+  .user-row,
+  .delete-search,
+  .delete-card {
+    grid-template-columns: 1fr;
+  }
+
+  .review-summary,
+  .issue-list,
+  .agent-log-grid {
     grid-template-columns: 1fr;
   }
 
