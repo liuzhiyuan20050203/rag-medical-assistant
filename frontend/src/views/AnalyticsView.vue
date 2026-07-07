@@ -60,7 +60,7 @@
           </div>
         </div>
 
-        <p v-else class="empty-state">暂无症状命中数据，完成几次症状自查后会自动生成。</p>
+        <p v-else class="empty-state">暂无症状命中数据，完成几次 AI 助手咨询后会自动生成。</p>
       </article>
 
       <article class="chart-card risk-card">
