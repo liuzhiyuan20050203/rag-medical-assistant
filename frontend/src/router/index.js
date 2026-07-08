@@ -2,6 +2,8 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import HomeView from '../views/HomeView.vue'
 import ChatView from '../views/ChatView.vue'
+import MedicineView from '../views/MedicineView.vue'
+import MultimodalView from '../views/MultimodalView.vue'
 import KnowledgeView from '../views/KnowledgeView.vue'
 import HistoryView from '../views/HistoryView.vue'
 import LoginView from '../views/LoginView.vue'
@@ -20,6 +22,16 @@ const router = createRouter({
       path: '/chat',
       name: 'chat',
       component: ChatView,
+    },
+    {
+      path: '/medicine',
+      name: 'medicine',
+      component: MedicineView,
+    },
+    {
+      path: '/multimodal',
+      name: 'multimodal',
+      component: MultimodalView,
     },
     {
       path: '/knowledge',

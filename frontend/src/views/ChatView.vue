@@ -907,6 +907,7 @@ const buildUserText = (payload) => {
   if (payload.text.trim()) parts.push(payload.text.trim())
   if (payload.image_summary?.trim()) {
     parts.push(imageFileName.value ? `已添加图片：${imageFileName.value}` : '已添加图片')
+    parts.push(`图片识别结果：\n${payload.image_summary.trim()}`)
   } else if (imageFileName.value && imageStatus.value) {
     parts.push(`${imageFileName.value}（${imageStatus.value}）`)
   }

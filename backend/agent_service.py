@@ -929,6 +929,9 @@ def can_skip_llm_planner(normalized):
     if is_information_insufficient(normalized):
         return True
 
+    if normalized.get("input_type") == "image" and normalized.get("image_summary"):
+        return True
+
     if asks_about_symptom_image(normalized):
         return True
 
@@ -1272,6 +1275,8 @@ def run_agent(data):
     else:
         used_tools.append("local_fallback")
         answer = fallback_answer
+    if normalized["input_type"] == "image" and normalized.get("image_summary"):
+        answer = f"图片识别结果：\n{normalized['image_summary']}\n\n{answer}"
     answer += low_confidence_notice(action="rag_answer", confidence=plan["confidence"])
     action = "image_assist" if normalized["input_type"] == "image" else "rag_answer"
     reason = "图片识别结果被转成文本后进入 RAG 问答。" if action == "image_assist" else "识别为症状或健康问题，Agent 调用 RAG 知识库。"
