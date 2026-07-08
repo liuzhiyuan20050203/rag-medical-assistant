@@ -44,6 +44,11 @@ def get_vision_llm_config():
     model = config_value(local_env, "VISION_LLM_MODEL")
     api_key = config_value(local_env, "VISION_LLM_API_KEY")
 
+    if provider.lower() == "openai":
+        base_url = base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+        model = model or os.getenv("OPENAI_MODEL", "gpt-5.5")
+        api_key = api_key or os.getenv("OPENAI_API_KEY", "").strip()
+
     return {
         "provider": provider,
         "base_url": base_url,
@@ -221,6 +226,16 @@ def analyze_images_with_vision_llm(image_data_urls: list[str], note: str = ""):
         result = response.json()
         answer = clean_model_text(result["choices"][0]["message"]["content"])
         parsed = safe_json_parse(answer)
+        if not isinstance(parsed, dict):
+            return {
+                "used": True,
+                "provider": config["provider"],
+                "model": config["model"],
+                "success": False,
+                "analysis": None,
+                "raw_text": answer[:800],
+                "error": "多模态LLM未返回有效JSON识别结果。"
+            }
 
         return {
             "used": True,
@@ -228,7 +243,7 @@ def analyze_images_with_vision_llm(image_data_urls: list[str], note: str = ""):
             "model": config["model"],
             "success": True,
             "analysis": parsed,
-            "raw_text": "",
+            "raw_text": answer[:800],
             "error": ""
         }
     except Exception as exc:

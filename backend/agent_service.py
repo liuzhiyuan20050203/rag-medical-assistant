@@ -452,7 +452,7 @@ def is_information_insufficient(normalized):
     question = normalized["question"]
     text = normalized["text"]
 
-    if normalized["input_type"] == "image" and (normalized["image_summary"] or normalized["image_tags"]):
+    if normalized["image_summary"] or normalized["image_tags"]:
         return False
 
     if is_medicine_query(normalized):
@@ -613,11 +613,56 @@ def docs_from_medicines(medicines):
 
 def run_rag_answer(question):
     retrieved_docs = search_knowledge(question, top_k=3)
-    fallback_answer = build_simple_answer(question, retrieved_docs)
+    fallback_answer = build_user_friendly_fallback(
+        question,
+        retrieved_docs,
+        has_image=False,
+    )
     llm_result = generate_llm_answer(question, retrieved_docs)
     answer = llm_result["answer"] if llm_result.get("success") else fallback_answer
 
     return answer, retrieved_docs, llm_result
+
+
+def build_user_friendly_fallback(question, retrieved_docs, has_image=False):
+    docs = retrieved_docs or []
+    if not docs:
+        return (
+            "目前没有在知识库中找到足够匹配的信息。"
+            "如果是图片问题，可以补充主要不适、持续时间、是否疼痛或瘙痒；如果症状明显加重，请及时就医。"
+            "\n\n本系统仅提供健康信息参考，不能替代医生诊断或药师指导。"
+        )
+
+    lines = []
+    if has_image:
+        lines.append("根据图片识别线索和知识库匹配结果，下面这些方向可作为健康信息参考，不能仅凭图片确诊。")
+    else:
+        lines.append("根据你的描述和知识库匹配结果，可以先参考下面这些方向。")
+
+    for doc in docs[:3]:
+        raw = doc.get("raw") or {}
+        title = raw.get("name") or doc.get("title") or "相关知识"
+        symptoms = raw.get("symptoms") or []
+        if isinstance(symptoms, list):
+            symptoms = "、".join(str(item) for item in symptoms if item)
+
+        lines.append("")
+        lines.append(f"{title}")
+
+        if symptoms:
+            lines.append(f"常见表现：{symptoms}")
+
+        care = raw.get("care_advice") or raw.get("notice") or ""
+        if care:
+            lines.append(f"日常处理：{care}")
+
+        warning = raw.get("warning") or raw.get("contraindication") or ""
+        if warning:
+            lines.append(f"需要注意：{warning}")
+
+    lines.append("")
+    lines.append("如果出现高热不退、呼吸困难、胸痛、意识异常、出血不止，或症状持续加重，应及时就医。本系统仅提供健康信息参考，不能替代医生诊断或药师指导。")
+    return "\n".join(lines)
 
 
 def should_skip_final_llm(normalized):
@@ -1253,7 +1298,11 @@ def run_agent(data):
     plan["confidence"] = rag_confidence(retrieved_docs, has_image=bool(normalized["image_summary"]))
     if plan["confidence"] < 0.6:
         plan["reason"] = f"{plan.get('reason', '')}；知识库检索匹配度较低。".strip("；")
-    fallback_answer = build_simple_answer(question, retrieved_docs)
+    fallback_answer = build_user_friendly_fallback(
+        question,
+        retrieved_docs,
+        has_image=bool(normalized["image_summary"] or normalized["image_tags"]),
+    )
     answer_type = "symptom_image" if normalized["image_summary"] else "symptom"
     llm_result = {
         "success": False,

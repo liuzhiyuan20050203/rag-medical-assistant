@@ -15,9 +15,18 @@ def get_llm_config():
     """
     provider = os.getenv("LLM_PROVIDER", "deepseek").lower()
     deepseek_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
 
     if provider == "deepseek" and not deepseek_key and os.getenv("VISION_LLM_API_KEY", "").strip():
         provider = "qwen"
+
+    if provider == "openai":
+        return {
+            "provider": "openai",
+            "api_key": openai_key,
+            "base_url": os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
+            "model": os.getenv("OPENAI_MODEL", "gpt-5.5")
+        }
 
     if provider == "deepseek":
         return {

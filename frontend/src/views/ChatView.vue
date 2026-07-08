@@ -61,6 +61,9 @@
                 <pre>{{ message.content }}</pre>
 
                 <div v-if="message.role === 'assistant'" class="message-actions">
+                  <span v-if="message.llm" :class="['llm-badge', message.llm.used ? 'llm-on' : 'llm-off']">
+                    {{ message.llm.used ? `AI 大模型参与：${message.llm.model || message.llm.provider || '已启用'}` : '本地知识库模板回答' }}
+                  </span>
                   <button
                     v-if="speechSynthesisSupported"
                     type="button"
@@ -375,6 +378,7 @@ const imageSummary = ref('')
 const imageTagsText = ref('')
 const imagePreview = ref('')
 const imageFileName = ref('')
+const imageFileRef = ref(null)
 const imageLoading = ref(false)
 const imageStatus = ref('')
 const messages = ref([])
@@ -397,7 +401,13 @@ const speechRecognitionSupported = ref(false)
 const speechSynthesisSupported = ref(false)
 
 const canSubmit = computed(() => {
-  return Boolean(question.value.trim() || imageSummary.value.trim() || imageTagsText.value.trim())
+  return Boolean(
+    question.value.trim()
+    || imagePreview.value
+    || imageFileRef.value
+    || imageSummary.value.trim()
+    || imageTagsText.value.trim()
+  )
 })
 
 const isAdmin = computed(() => currentUser.value?.role === 'admin')
@@ -406,6 +416,8 @@ const attachmentVisible = computed(() => Boolean(imagePreview.value || imageFile
 
 const attachmentLabel = computed(() => {
   if (imageLoading.value) return imageFileName.value ? `正在识别 ${imageFileName.value}` : '正在识别图片'
+  if (imageFileName.value && !imagePreview.value && !imageFileRef.value) return `图片未读取成功，请重新选择 ${imageFileName.value}`
+  if (imageStatus.value && !imagePreview.value && !imageFileRef.value) return imageStatus.value
   if (imageSummary.value || imageTagsText.value) return imageFileName.value ? `已添加 ${imageFileName.value}` : '已添加图片'
   if (imageFileName.value) return `已选择 ${imageFileName.value}`
   return '已添加附件'
@@ -587,6 +599,51 @@ const readFileAsDataUrl = (file) =>
     reader.readAsDataURL(file)
   })
 
+const compressImageFile = (file, maxSize = 1024, quality = 0.76) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    const timeout = window.setTimeout(() => {
+      reject(new Error('图片读取超时'))
+    }, 8000)
+    const finish = (callback, value) => {
+      window.clearTimeout(timeout)
+      callback(value)
+    }
+    reader.onload = () => {
+      const img = new window.Image()
+      img.onload = () => {
+        const scale = Math.min(1, maxSize / Math.max(img.width, img.height))
+        const width = Math.max(1, Math.round(img.width * scale))
+        const height = Math.max(1, Math.round(img.height * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, width, height)
+        finish(resolve, canvas.toDataURL('image/jpeg', quality))
+      }
+      img.onerror = () => finish(reject, new Error('图片解码失败'))
+      img.src = String(reader.result || '')
+    }
+    reader.onerror = () => finish(reject, new Error('图片读取失败'))
+    reader.readAsDataURL(file)
+  })
+
+const prepareImagePreview = async (file) => {
+  try {
+    return await compressImageFile(file)
+  } catch (error) {
+    console.warn('图片压缩失败，改用原图读取。', error)
+    return readFileAsDataUrl(file)
+  }
+}
+
+const isImageFile = (file) => {
+  const type = String(file?.type || '').toLowerCase()
+  const name = String(file?.name || '').toLowerCase()
+  return type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|heic|heif)$/i.test(name)
+}
+
 const formatConfidence = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return '暂无'
@@ -764,9 +821,18 @@ const handleImageFile = async (event) => {
   clearAttachment()
   inputType.value = question.value.trim() ? 'mixed' : 'image'
   imageFileName.value = file.name
-  imageStatus.value = '图片已添加，正在识别。'
-  imagePreview.value = await readFileAsDataUrl(file)
-  await analyzeImageForChat()
+  imageFileRef.value = file
+  imageStatus.value = '正在读取图片...'
+  try {
+    imagePreview.value = await prepareImagePreview(file)
+    imageStatus.value = '图片已添加，发送后会和文字一起分析。'
+  } catch (error) {
+    console.error(error)
+    imagePreview.value = ''
+    imageFileName.value = ''
+    imageFileRef.value = null
+    imageStatus.value = '图片读取失败，请重新选择图片。'
+  }
   event.target.value = ''
 }
 
@@ -774,13 +840,12 @@ const handleLocalFile = async (event) => {
   const file = event.target.files?.[0]
   if (!file) return
 
-  if (file.type.startsWith('image/')) {
+  if (isImageFile(file)) {
     await handleImageFile(event)
     return
   }
 
   clearAttachment()
-  imageFileName.value = file.name
   imageStatus.value = '当前先支持图片识别，PDF、Word 等文件解析会放到后续步骤。'
   event.target.value = ''
 }
@@ -798,6 +863,7 @@ const clearAttachment = () => {
   imageTagsText.value = ''
   imagePreview.value = ''
   imageFileName.value = ''
+  imageFileRef.value = null
   imageStatus.value = ''
 }
 
@@ -837,8 +903,8 @@ const buildImageSummary = (result) => {
   return lines.filter(Boolean).join('\n')
 }
 
-const analyzeImageForChat = async () => {
-  if (!imagePreview.value || imageLoading.value) return
+const analyzeImageForChat = async (noteText = '') => {
+  if (!imagePreview.value || imageLoading.value) return false
 
   imageLoading.value = true
   imageStatus.value = '正在识别图片...'
@@ -852,14 +918,19 @@ const analyzeImageForChat = async () => {
       body: JSON.stringify({
         image: imagePreview.value,
         file_name: imageFileName.value,
-        note: question.value,
+        note: noteText || question.value,
       }),
     })
     const data = await response.json()
 
-    if (!data.success) {
-      imageStatus.value = data.message || '图片识别失败，请换一张更清晰的图片。'
-      return
+    if (!response.ok || !data.success) {
+      imageStatus.value = data.message || `图片识别失败，状态码：${response.status}`
+      return false
+    }
+
+    if (!data.llm?.success || !data.llm?.analysis) {
+      imageStatus.value = data.llm?.error || '视觉大模型没有返回有效识别结果，请检查模型配置或换一张更清晰的图片。'
+      return false
     }
 
     const llmAnalysis = data.llm?.analysis || {}
@@ -872,9 +943,11 @@ const analyzeImageForChat = async () => {
     imageTagsText.value = tags.join('、')
     imageSummary.value = buildImageSummary(data) || '图片已完成基础识别，请结合文字描述继续提问。'
     imageStatus.value = '图片已识别，会随消息一起发送给 AI。'
+    return true
   } catch (error) {
     imageStatus.value = '图片识别请求失败，请检查后端服务。'
     console.error(error)
+    return false
   } finally {
     imageLoading.value = false
   }
@@ -909,11 +982,12 @@ const buildUserText = (payload) => {
     parts.push(imageFileName.value ? `已添加图片：${imageFileName.value}` : '已添加图片')
     parts.push(`图片识别结果：\n${payload.image_summary.trim()}`)
   } else if (imageFileName.value && imageStatus.value) {
-    parts.push(`${imageFileName.value}（${imageStatus.value}）`)
+    parts.push(`已上传图片：${imageFileName.value}（${imageStatus.value}）`)
+  } else if (imagePreview.value) {
+    parts.push('已上传图片')
   }
   return parts.join('\n')
 }
-
 const getPayloadInputType = (payload) => {
   if (payload.text && payload.image_summary) return 'mixed'
   if (payload.image_summary) return 'image'
@@ -937,21 +1011,40 @@ const buildConversationHistory = () => messages.value
 
 const submitQuestion = async () => {
   if (!canSubmit.value || loading.value) return
-  if (imagePreview.value && !imageSummary.value && !imageLoading.value) {
-    await analyzeImageForChat()
-  }
-  if (imageLoading.value) return
 
-  const payload = {
-    input_type: inputType.value,
-    text: question.value.trim(),
+  const pendingInputType = inputType.value
+  const pendingText = question.value.trim()
+  const hasPendingImage = Boolean(imagePreview.value || imageFileRef.value || imageFileName.value)
+  const effectiveText = pendingText || (hasPendingImage ? '请根据我上传的图片进行健康分析' : '')
+  if (hasPendingImage && !imagePreview.value && imageFileRef.value) {
+    imageStatus.value = '正在读取图片...'
+    try {
+      imagePreview.value = await prepareImagePreview(imageFileRef.value)
+      imageStatus.value = '图片已添加，发送后会和文字一起分析。'
+    } catch (error) {
+      console.error(error)
+      imageStatus.value = '图片读取失败，请重新选择图片。'
+      return
+    }
+  }
+
+  if (hasPendingImage && !imagePreview.value) {
+    imageStatus.value = pendingText
+      ? '图片读取失败，请重新选择图片，或移除附件后发送文字。'
+      : '图片读取失败，请重新选择图片。'
+    return
+  }
+
+  const pendingImagePreview = imagePreview.value
+  const pendingImageFileName = imageFileName.value
+  const previousHistory = buildConversationHistory()
+  const initialPayload = {
+    input_type: pendingInputType,
+    text: pendingText,
     image_summary: imageSummary.value.trim(),
     image_tags: parseImageTags(),
-    history: buildConversationHistory(),
-    session_id: activeSessionId.value,
   }
-  payload.input_type = getPayloadInputType(payload)
-  const userContent = buildUserText(payload)
+  const userContent = buildUserText(initialPayload)
 
   messages.value.push({
     id: `user-${Date.now()}`,
@@ -968,12 +1061,34 @@ const submitQuestion = async () => {
   })
 
   question.value = ''
-  clearAttachment()
   loading.value = true
   await resizeComposer()
   await scrollToBottom()
 
   try {
+    if (pendingImagePreview && !imageSummary.value && !imageLoading.value) {
+      const imageOk = await analyzeImageForChat(effectiveText)
+      if (!imageOk) {
+        throw new Error(imageStatus.value || '图片识别失败，请稍后重试。')
+      }
+    }
+
+    if (pendingImagePreview && !imageSummary.value.trim()) {
+      throw new Error(`图片识别没有返回有效结果：${pendingImageFileName || '未命名图片'}`)
+    }
+
+    const payload = {
+      input_type: pendingInputType,
+      text: effectiveText,
+      image_summary: imageSummary.value.trim(),
+      image_tags: parseImageTags(),
+      history: previousHistory,
+      session_id: activeSessionId.value,
+    }
+    payload.text = effectiveText
+    payload.input_type = getPayloadInputType(payload)
+    clearAttachment()
+
     const response = await fetch(apiUrl('/api/agent/chat'), {
       method: 'POST',
       headers: authHeaders({
@@ -999,6 +1114,7 @@ const submitQuestion = async () => {
       intent: data.intent || data.agent_trace?.intent || '',
       confidence: data.confidence ?? data.agent_trace?.confidence ?? null,
       reliability: data.reliability || data.agent_trace?.reliability || null,
+      llm: data.llm || null,
       error: data.error || null,
       historyId: data.history_id || null,
       feedbackType: '',
@@ -1017,7 +1133,7 @@ const submitQuestion = async () => {
     const errorMessage = {
       id: `assistant-error-${Date.now()}`,
       role: 'assistant',
-      content: '请求失败，请检查后端服务是否正常运行。',
+      content: error?.message || '请求失败，请检查后端服务是否正常运行。',
       error: {
         type: 'RequestError',
         message: error?.message || '请求失败',
@@ -1427,6 +1543,29 @@ pre {
   border-radius: 8px;
   cursor: pointer;
   font-weight: 800;
+}
+
+.llm-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.llm-on {
+  color: #166534;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.llm-off {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
 }
 
 .feedback-panel {
