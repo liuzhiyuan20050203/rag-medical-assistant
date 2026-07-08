@@ -152,7 +152,7 @@
 
 <script setup>
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref } from 'vue'
-import { apiUrl } from '../api'
+import { apiUrl, cachedGetJson } from '../api'
 
 const toList = (value) => {
   if (!value) {
@@ -344,10 +344,9 @@ const postJson = async (path, body) => {
   return data
 }
 
-const loadMultimodalStatus = async () => {
+const loadMultimodalStatus = async (force = false) => {
   try {
-    const response = await fetch(apiUrl('/api/multimodal/status'))
-    multimodalStatus.value = await response.json()
+    multimodalStatus.value = await cachedGetJson('multimodal:status', '/api/multimodal/status', { force })
   } catch (error) {
     multimodalStatus.value = {
       vision_llm_available: false,

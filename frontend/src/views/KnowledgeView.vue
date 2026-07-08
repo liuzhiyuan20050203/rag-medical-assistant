@@ -6,6 +6,9 @@
         本页面展示系统当前内置的常见病知识库、药品知识库和危险症状规则库。
         AI 医疗助手会基于这些知识内容进行检索和回答。
       </p>
+      <button type="button" class="refresh-btn" @click="loadKnowledge(true)" :disabled="loading">
+        {{ loading ? '刷新中...' : '刷新数据' }}
+      </button>
     </div>
 
     <div class="tabs">
@@ -112,7 +115,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { apiUrl } from '../api'
+import { cachedGetJson } from '../api'
 
 const activeTab = ref('disease')
 const loading = ref(false)
@@ -121,20 +124,18 @@ const diseases = ref([])
 const medicines = ref([])
 const warningRules = ref([])
 
-const loadKnowledge = async () => {
+const loadKnowledge = async (force = false) => {
   loading.value = true
 
   try {
-    const diseaseResponse = await fetch(apiUrl('/api/disease/list'))
-    const diseaseData = await diseaseResponse.json()
+    const [diseaseData, medicineData, warningData] = await Promise.all([
+      cachedGetJson('knowledge:diseases', '/api/disease/list', { force }),
+      cachedGetJson('knowledge:medicines', '/api/medicine/list', { force }),
+      cachedGetJson('knowledge:warnings', '/api/warning/list', { force }),
+    ])
+
     diseases.value = diseaseData.data || []
-
-    const medicineResponse = await fetch(apiUrl('/api/medicine/list'))
-    const medicineData = await medicineResponse.json()
     medicines.value = medicineData.data || []
-
-    const warningResponse = await fetch(apiUrl('/api/warning/list'))
-    const warningData = await warningResponse.json()
     warningRules.value = warningData.data || []
   } catch (error) {
     alert('知识库加载失败，请检查后端服务是否正常运行。')
@@ -152,6 +153,23 @@ onMounted(() => {
 <style scoped>
 .page-title {
   margin-bottom: 24px;
+}
+
+.refresh-btn {
+  margin-top: 14px;
+  min-height: 38px;
+  padding: 0 14px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .page-title h2 {

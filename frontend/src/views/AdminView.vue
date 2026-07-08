@@ -17,7 +17,7 @@
       </div>
 
       <div class="admin-actions">
-        <button type="button" @click="loadAdminData" :disabled="loading">
+        <button type="button" @click="loadAdminData(true)" :disabled="loading">
           {{ loading ? '刷新中...' : '刷新数据' }}
         </button>
         <button class="index-btn" type="button" @click="rebuildIndex" :disabled="indexLoading">
@@ -496,7 +496,13 @@
 
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
-import { apiUrl } from '../api'
+import {
+  apiUrl,
+  clearPageCache,
+  clearPageCacheByPrefix,
+  readPageCache,
+  writePageCache,
+} from '../api'
 
 const user = ref(null)
 const loading = ref(false)
@@ -612,6 +618,32 @@ const parseAdminResponse = async (response) => {
   return response.json()
 }
 
+const adminCachePrefix = () => `admin:${user.value?.id || user.value?.username || 'guest'}:`
+
+const adminCacheKey = (name) => `${adminCachePrefix()}${name}`
+
+const cachedAdminGet = async (name, path, force = false) => {
+  const key = adminCacheKey(name)
+  const cached = force ? null : readPageCache(key)
+
+  if (cached) {
+    return cached
+  }
+
+  const response = await fetch(apiUrl(path), {
+    headers: authHeaders(),
+  })
+  const data = await parseAdminResponse(response)
+  return writePageCache(key, data)
+}
+
+const clearAdminDataCache = () => {
+  clearPageCacheByPrefix(adminCachePrefix())
+  clearPageCacheByPrefix('knowledge:')
+  clearPageCache('home:stats')
+  clearPageCache('analytics:summary')
+}
+
 const visibleKnowledge = computed(() => {
   if (activeKnowledge.value === 'disease') {
     return knowledge.value.diseases
@@ -677,7 +709,7 @@ const syncUserEdits = () => {
   })
 }
 
-const loadAdminData = async () => {
+const loadAdminData = async (force = false) => {
   if (!isAdmin.value) {
     return
   }
@@ -686,40 +718,16 @@ const loadAdminData = async () => {
   statusMessage.value = ''
 
   try {
-    const [
-      knowledgeResponse,
-      historyResponse,
-      usersResponse,
-      issuesResponse,
-      sessionsResponse,
-      runsResponse,
-    ] = await Promise.all([
-      fetch(apiUrl('/api/admin/knowledge'), {
-        headers: authHeaders(),
-      }),
-      fetch(apiUrl('/api/admin/history'), {
-        headers: authHeaders(),
-      }),
-      fetch(apiUrl('/api/admin/users'), {
-        headers: authHeaders(),
-      }),
-      fetch(apiUrl('/api/admin/review/issues'), {
-        headers: authHeaders(),
-      }),
-      fetch(apiUrl('/api/admin/conversations/sessions'), {
-        headers: authHeaders(),
-      }),
-      fetch(apiUrl('/api/admin/agent/runs'), {
-        headers: authHeaders(),
-      }),
+    const [knowledgeData, historyData, usersData, issuesData, sessionsData, runsData] = await Promise.all([
+      cachedAdminGet('knowledge', '/api/admin/knowledge', force),
+      cachedAdminGet('history', '/api/admin/history', force),
+      cachedAdminGet('users', '/api/admin/users', force),
+      cachedAdminGet('issues', '/api/admin/review/issues', force),
+      cachedAdminGet('sessions', '/api/admin/conversations/sessions', force),
+      cachedAdminGet('runs', '/api/admin/agent/runs', force),
     ])
 
-    knowledge.value = await parseAdminResponse(knowledgeResponse)
-    const historyData = await parseAdminResponse(historyResponse)
-    const usersData = await parseAdminResponse(usersResponse)
-    const issuesData = await parseAdminResponse(issuesResponse)
-    const sessionsData = await parseAdminResponse(sessionsResponse)
-    const runsData = await parseAdminResponse(runsResponse)
+    knowledge.value = knowledgeData
     historyList.value = historyData.data || []
     users.value = usersData.data || []
     issueList.value = issuesData.data || []
@@ -757,7 +765,8 @@ const createSystemUser = async () => {
       userForm.password = ''
       userForm.role = 'user'
       userForm.active = true
-      await loadAdminData()
+      clearAdminDataCache()
+      await loadAdminData(true)
     }
   } catch (error) {
     console.error(error)
@@ -784,7 +793,8 @@ const updateSystemUser = async (username) => {
 
     const data = await parseAdminResponse(response)
     statusMessage.value = data.message
-    await loadAdminData()
+    clearAdminDataCache()
+    await loadAdminData(true)
   } catch (error) {
     console.error(error)
     if (!statusMessage.value) {
@@ -808,7 +818,8 @@ const deleteSystemUser = async (username) => {
 
     const data = await parseAdminResponse(response)
     statusMessage.value = data.message
-    await loadAdminData()
+    clearAdminDataCache()
+    await loadAdminData(true)
   } catch (error) {
     console.error(error)
     if (!statusMessage.value) {
@@ -854,6 +865,21 @@ const scrollToUploadSection = async () => {
 const showAllIssues = () => {
   activeReviewFilter.value = 'all'
   statusMessage.value = '已切换为查看全部待复核样本。'
+}
+
+const loadReviewIssues = async () => {
+  statusMessage.value = '正在刷新待复核样本...'
+
+  try {
+    const data = await cachedAdminGet('issues', '/api/admin/review/issues', true)
+    issueList.value = data.data || []
+    statusMessage.value = '待复核样本已刷新。'
+  } catch (error) {
+    console.error(error)
+    if (!statusMessage.value) {
+      statusMessage.value = '待复核样本刷新失败。'
+    }
+  }
 }
 
 const fillKnowledgeDraft = async (item, kind) => {
@@ -938,7 +964,8 @@ const uploadDoc = async (kind) => {
     if (data.success) {
       target.content = ''
       target.fileName = ''
-      await loadAdminData()
+      clearAdminDataCache()
+      await loadAdminData(true)
     }
   } catch (error) {
     console.error(error)
@@ -1004,7 +1031,8 @@ const deleteKnowledgeItem = async (item) => {
     if (data.success) {
       deleteTool.results = deleteTool.results.filter((candidate) => candidate.id !== item.id)
       statusMessage.value = '知识已删除。请点击“更新向量索引”，同步 RAG 检索结果。'
-      await loadAdminData()
+      clearAdminDataCache()
+      await loadAdminData(true)
     }
   } catch (error) {
     console.error(error)
@@ -1051,7 +1079,8 @@ const markError = async (recordId) => {
 
     const data = await parseAdminResponse(response)
     statusMessage.value = data.message
-    await loadAdminData()
+    clearAdminDataCache()
+    await loadAdminData(true)
   } catch (error) {
     console.error(error)
     statusMessage.value = '标记失败，请检查后端服务是否正常运行。'

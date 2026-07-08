@@ -124,11 +124,11 @@
                   </details>
                 </div>
 
-                <div v-if="isAdmin && message.trace" class="agent-panel">
-                  <div class="agent-header">
-                    <strong>Agent 调度</strong>
-                    <span>{{ labelAction(message.action) }}</span>
-                  </div>
+                <details v-if="isAdmin && message.trace" class="agent-panel">
+                  <summary>
+                    <span>Agent 调度</span>
+                    <b>{{ labelAction(message.action) }}</b>
+                  </summary>
                   <p class="agent-decision">{{ agentDecisionSummary(message) }}</p>
                   <div class="agent-metrics">
                     <div>
@@ -157,7 +157,7 @@
                   <div class="tool-list">
                     <span v-for="tool in message.trace.used_tools" :key="tool">{{ labelTool(tool) }}</span>
                   </div>
-                </div>
+                </details>
 
                 <div v-if="isAdmin && message.error" class="error-box">
                   <strong>Agent 处理异常</strong>
@@ -214,13 +214,6 @@
               class="sr-only"
               @change="handleImageFile"
             />
-            <input
-              ref="fileInputRef"
-              type="file"
-              accept="image/*,.pdf,.doc,.docx,.txt"
-              class="sr-only"
-              @change="handleLocalFile"
-            />
 
             <button
               type="button"
@@ -231,17 +224,6 @@
               @click="openImagePicker"
             >
               <Image :size="22" aria-hidden="true" />
-            </button>
-
-            <button
-              type="button"
-              class="icon-btn"
-              title="添加本地文件"
-              aria-label="添加本地文件"
-              :disabled="loading || imageLoading"
-              @click="openFilePicker"
-            >
-              <FolderOpen :size="22" aria-hidden="true" />
             </button>
 
             <button
@@ -275,7 +257,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  FolderOpen,
   Image,
   LoaderCircle,
   Mic,
@@ -388,7 +369,6 @@ const activeSessionId = ref(null)
 const conversationRef = ref(null)
 const textareaRef = ref(null)
 const imageInputRef = ref(null)
-const fileInputRef = ref(null)
 const recognition = ref(null)
 const isListening = ref(false)
 const speechStatus = ref('')
@@ -836,26 +816,8 @@ const handleImageFile = async (event) => {
   event.target.value = ''
 }
 
-const handleLocalFile = async (event) => {
-  const file = event.target.files?.[0]
-  if (!file) return
-
-  if (isImageFile(file)) {
-    await handleImageFile(event)
-    return
-  }
-
-  clearAttachment()
-  imageStatus.value = '当前先支持图片识别，PDF、Word 等文件解析会放到后续步骤。'
-  event.target.value = ''
-}
-
 const openImagePicker = () => {
   imageInputRef.value?.click()
-}
-
-const openFilePicker = () => {
-  fileInputRef.value?.click()
 }
 
 const clearAttachment = () => {
@@ -980,7 +942,6 @@ const buildUserText = (payload) => {
   if (payload.text.trim()) parts.push(payload.text.trim())
   if (payload.image_summary?.trim()) {
     parts.push(imageFileName.value ? `已添加图片：${imageFileName.value}` : '已添加图片')
-    parts.push(`图片识别结果：\n${payload.image_summary.trim()}`)
   } else if (imageFileName.value && imageStatus.value) {
     parts.push(`已上传图片：${imageFileName.value}（${imageStatus.value}）`)
   } else if (imagePreview.value) {
@@ -1195,10 +1156,10 @@ onBeforeUnmount(() => {
 
 .chat-shell {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
-  gap: 18px;
-  height: calc(100vh - 178px);
-  min-height: 620px;
+  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+  gap: 14px;
+  height: calc(100vh - 156px);
+  min-height: 600px;
 }
 
 .chat-side,
@@ -1209,7 +1170,7 @@ onBeforeUnmount(() => {
 .chat-side {
   display: grid;
   align-content: start;
-  gap: 14px;
+  gap: 10px;
 }
 
 .assistant-card,
@@ -1224,12 +1185,12 @@ onBeforeUnmount(() => {
 }
 
 .assistant-card {
-  padding: 18px;
+  padding: 16px;
 }
 
 .assistant-badge {
   display: inline-flex;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   padding: 5px 10px;
   color: #0f766e;
   background: #ccfbf1;
@@ -1239,10 +1200,15 @@ onBeforeUnmount(() => {
 }
 
 .assistant-card h2 {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   color: var(--text-primary);
-  font-size: 21px;
+  font-size: 18px;
   line-height: 1.25;
+}
+
+.assistant-card p {
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .assistant-card p,
@@ -1254,8 +1220,8 @@ onBeforeUnmount(() => {
 
 .quick-panel {
   display: grid;
-  gap: 10px;
-  padding: 14px;
+  gap: 8px;
+  padding: 12px;
 }
 
 .section-title {
@@ -1277,8 +1243,8 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 3px;
   width: 100%;
-  min-height: 66px;
-  padding: 10px 12px;
+  min-height: 54px;
+  padding: 9px 10px;
   color: var(--text-primary);
   text-align: left;
   background: #f8fafc;
@@ -1294,13 +1260,13 @@ onBeforeUnmount(() => {
 
 .quick-card span {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .admin-tip {
   display: grid;
   gap: 4px;
-  padding: 14px 16px;
+  padding: 12px 14px;
   border-color: #c7d2fe;
   background: #eef2ff;
 }
@@ -1319,9 +1285,9 @@ onBeforeUnmount(() => {
 .conversation {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   overflow-y: auto;
-  padding: 22px;
+  padding: 20px;
   scroll-behavior: smooth;
 }
 
@@ -1329,12 +1295,13 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
   gap: 12px;
-  max-width: 940px;
+  max-width: 860px;
 }
 
 .user-message {
   align-self: flex-end;
   grid-template-columns: minmax(0, 1fr) 42px;
+  max-width: 720px;
 }
 
 .user-message .avatar {
@@ -1362,7 +1329,7 @@ onBeforeUnmount(() => {
 }
 
 .bubble {
-  padding: 16px 18px;
+  padding: 14px 16px;
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1384,7 +1351,7 @@ pre {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
-  line-height: 1.85;
+  line-height: 1.75;
 }
 
 .typing {
@@ -1474,9 +1441,9 @@ pre {
 
 .reliability-note {
   display: grid;
-  gap: 5px;
-  margin-top: 14px;
-  padding: 11px 12px;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 9px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
 }
@@ -1524,14 +1491,14 @@ pre {
 }
 
 .source-list {
-  margin-top: 14px;
+  margin-top: 12px;
 }
 
 .message-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .message-actions button {
@@ -1571,8 +1538,8 @@ pre {
 .feedback-panel {
   display: grid;
   gap: 8px;
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid var(--border);
 }
 
@@ -1641,15 +1608,16 @@ pre {
 .agent-panel {
   display: grid;
   gap: 10px;
-  margin-top: 14px;
-  padding: 14px;
+  margin-top: 12px;
+  padding: 0;
   color: var(--text-secondary);
   background: #f8fafc;
   border: 1px dashed #94a3b8;
   border-radius: 8px;
+  overflow: hidden;
 }
 
-.agent-header,
+.agent-panel summary,
 .agent-metrics {
   display: flex;
   flex-wrap: wrap;
@@ -1658,22 +1626,43 @@ pre {
   justify-content: space-between;
 }
 
-.agent-header span,
+.agent-panel summary {
+  min-height: 42px;
+  padding: 0 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  list-style: none;
+  font-weight: 900;
+}
+
+.agent-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.agent-panel summary::after {
+  content: '展开';
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.agent-panel[open] summary::after {
+  content: '收起';
+}
+
+.agent-panel summary b,
 .tool-list span,
 .error-box span {
   padding: 4px 9px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 800;
-}
-
-.agent-header span {
   color: #0f766e;
   background: #ccfbf1;
 }
 
 .agent-decision {
-  margin: 0;
+  margin: 0 12px;
   padding: 10px 12px;
   color: #155e75;
   background: #ecfeff;
@@ -1688,6 +1677,18 @@ pre {
   display: grid;
   gap: 2px;
   min-width: 120px;
+}
+
+.agent-metrics,
+.reliability-breakdown,
+.agent-panel > p,
+.tool-list {
+  margin-right: 12px;
+  margin-left: 12px;
+}
+
+.agent-panel > .tool-list {
+  margin-bottom: 12px;
 }
 
 .agent-metrics small {
@@ -1744,8 +1745,8 @@ pre {
 
 .composer {
   display: grid;
-  gap: 12px;
-  padding: 16px;
+  gap: 10px;
+  padding: 12px;
   background: #ffffff;
   border-top: 1px solid var(--border);
 }
@@ -1815,10 +1816,10 @@ pre {
 
 .chat-composer-bar {
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) 46px 46px 46px;
+  grid-template-columns: 46px minmax(0, 1fr) 46px 46px;
   gap: 8px;
   align-items: end;
-  padding: 10px;
+  padding: 8px;
   background: #f8fafc;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1962,7 +1963,7 @@ textarea:focus {
 }
 
 .safety-note {
-  padding: 10px 16px;
+  padding: 9px 14px;
   color: #9a3412;
   background: #fff7ed;
   border-top: 1px solid #fed7aa;
@@ -2006,7 +2007,7 @@ textarea:focus {
   }
 
   .chat-composer-bar {
-    grid-template-columns: 42px minmax(0, 1fr) 42px 42px 42px;
+    grid-template-columns: 42px minmax(0, 1fr) 42px 42px;
     padding: 8px;
   }
 

@@ -9,7 +9,7 @@
         </p>
       </div>
 
-      <button type="button" @click="loadAnalytics" :disabled="loading">
+      <button type="button" @click="loadAnalytics(true)" :disabled="loading">
         {{ loading ? '加载中...' : '刷新分析' }}
       </button>
     </section>
@@ -189,7 +189,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { apiUrl } from '../api'
+import { cachedGetJson } from '../api'
 
 const loading = ref(false)
 const message = ref('')
@@ -291,13 +291,12 @@ const trendHeight = (item) => {
   return `${Math.max(percent, 8)}%`
 }
 
-const loadAnalytics = async () => {
+const loadAnalytics = async (force = false) => {
   loading.value = true
   message.value = ''
 
   try {
-    const response = await fetch(apiUrl('/api/analytics/summary'))
-    analytics.value = await response.json()
+    analytics.value = await cachedGetJson('analytics:summary', '/api/analytics/summary', { force })
   } catch (error) {
     console.error(error)
     message.value = '分析数据加载失败，请检查后端服务是否正常运行。'

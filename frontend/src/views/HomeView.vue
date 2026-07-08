@@ -142,7 +142,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { apiUrl } from '../api'
+import { cachedGetJson } from '../api'
 
 const stats = ref({
   knowledge: {
@@ -191,12 +191,9 @@ const pharmacyHighlights = [
   },
 ]
 
-const loadStats = async () => {
+const loadStats = async (force = false) => {
   try {
-    const response = await fetch(apiUrl('/api/stats/summary'))
-    const data = await response.json()
-
-    stats.value = data
+    stats.value = await cachedGetJson('home:stats', '/api/stats/summary', { force })
   } catch (error) {
     console.error('统计数据加载失败：', error)
   }

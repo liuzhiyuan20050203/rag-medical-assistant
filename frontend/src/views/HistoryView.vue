@@ -8,7 +8,7 @@
     </div>
 
     <div class="toolbar">
-      <button @click="loadHistory" :disabled="loading">
+      <button @click="loadHistory(true)" :disabled="loading">
         {{ loading ? '加载中...' : '刷新记录' }}
       </button>
 
@@ -110,7 +110,7 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { apiUrl } from '../api'
+import { apiUrl, cachedGetJson, clearPageCache } from '../api'
 
 const router = useRouter()
 const historyList = ref([])
@@ -146,6 +146,12 @@ const syncFeedbackDrafts = () => {
   })
 }
 
+const historyCacheKey = () => {
+  const raw = localStorage.getItem('ragUser')
+  const user = raw ? JSON.parse(raw) : null
+  return `history:list:${user?.id || user?.username || 'guest'}`
+}
+
 const displayQuestion = (question = '') => {
   const text = String(question || '').trim()
   const [userText] = text.split('图片识别描述：')
@@ -167,14 +173,16 @@ const hasImageInput = (question = '') => {
   return text.includes('图片识别描述：') || text.includes('图片识别标签：')
 }
 
-const loadHistory = async () => {
+const loadHistory = async (force = false) => {
   loading.value = true
 
   try {
-    const response = await fetch(apiUrl('/api/history/list'), {
-      headers: authHeaders(),
+    const data = await cachedGetJson(historyCacheKey(), '/api/history/list', {
+      force,
+      fetchOptions: {
+        headers: authHeaders(),
+      },
     })
-    const data = await response.json()
 
     historyList.value = data.data || []
     syncFeedbackDrafts()
@@ -200,6 +208,7 @@ const clearHistory = async () => {
     })
 
     historyList.value = []
+    clearPageCache(historyCacheKey())
   } catch (error) {
     alert('清空失败，请检查后端服务是否正常运行。')
     console.error(error)
@@ -238,7 +247,8 @@ const submitFeedback = async (recordId) => {
     const data = await response.json()
 
     if (data.success) {
-      await loadHistory()
+      clearPageCache(historyCacheKey())
+      await loadHistory(true)
     } else {
       alert(data.message || '反馈保存失败')
     }
