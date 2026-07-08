@@ -90,7 +90,7 @@
 
           <div v-else class="mini-list">
             <div v-for="item in agentRuns.slice(0, 6)" :key="item.id" class="mini-row">
-              <strong>{{ item.action || 'unknown' }} / {{ item.intent || 'unknown' }}</strong>
+              <strong>{{ labelAction(item.action) }} / {{ labelIntent(item.intent) }}</strong>
               <span>
                 运行 #{{ item.id }} · 会话 #{{ item.session_id }} · 可靠性 {{ Math.round((item.confidence || 0) * 100) }}%
               </span>
@@ -165,7 +165,7 @@
             <span>检索数：{{ item.retrieved_count }}</span>
             <span>最高分：{{ item.top_score }}</span>
             <span v-if="item.rating">评分：{{ item.rating }} 星</span>
-            <span v-if="item.action">动作：{{ item.action }}</span>
+            <span v-if="item.action">动作：{{ labelAction(item.action) }}</span>
           </div>
 
           <p class="issue-fix">{{ item.suggested_fix }}</p>
@@ -522,6 +522,31 @@ const reviewFilters = [
   { label: '差评/标错', value: 'bad' },
   { label: '全部', value: 'all' },
 ]
+
+const actionLabels = {
+  danger_alert: '危险症状提醒',
+  ask_followup: '追问关键信息',
+  rag_answer: '症状知识库问答',
+  medicine_query: '药品知识库查询',
+  image_assist: '图片线索辅助分析',
+  empty_input: '等待补充输入',
+  agent_error: 'Agent 调度异常',
+}
+
+const intentLabels = {
+  unknown: '未知输入',
+  danger_alert: '疑似危险症状',
+  followup: '信息不足需要追问',
+  medicine_query: '药品用药咨询',
+  image_assist: '图片相关健康咨询',
+  symptom_query: '常见症状咨询',
+  symptom_image: '症状图片咨询',
+  general_health: '一般健康咨询',
+}
+
+const labelAction = (action) => actionLabels[action] || action || '未判断'
+
+const labelIntent = (intent) => intentLabels[intent] || intent || '未识别'
 
 const userForm = reactive({
   username: '',
@@ -999,7 +1024,11 @@ const rebuildIndex = async () => {
       headers: authHeaders(),
     })
     const data = await parseAdminResponse(response)
-    statusMessage.value = `${data.message}，文档数：${data.data.doc_count}，向量维度：${data.data.dimension}`
+    const indexData = data.data || {}
+    const modeLabel = indexData.index_mode === 'semantic' ? '语义向量检索' : '关键词检索'
+    const modelText = indexData.embedding_model ? `，模型：${indexData.embedding_model}` : ''
+    const fallbackText = indexData.fallback ? `，${indexData.fallback_reason}` : ''
+    statusMessage.value = `${data.message}，模式：${modeLabel}${modelText}，文档数：${indexData.doc_count}，向量维度：${indexData.dimension}${fallbackText}`
   } catch (error) {
     console.error(error)
     statusMessage.value = '向量索引更新失败，请检查后端服务是否正常运行。'

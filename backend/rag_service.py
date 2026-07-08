@@ -12,11 +12,21 @@ documents = []
 vocab = []
 term_to_id = {}
 vector_dimension = 4096
+active_index_mode = "keyword"
+configured_index_mode = "keyword"
+active_embedding_model_name = ""
+embedding_model = None
+fallback_reason = ""
 
 
 # 检索分数阈值：太低的结果不返回，避免不相关知识混进回答
 # 如果后面发现检索不到内容，可以把 0.03 调低到 0.02
 MIN_SCORE = 0.03
+SEMANTIC_MIN_SCORE = 0.25
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+TITLE_MATCH_BOOST = 0.45
+KEYWORD_MATCH_BOOST = 0.08
+MAX_KEYWORD_BOOST = 0.32
 
 
 SYNONYMS = {
@@ -308,6 +318,136 @@ def get_vector_dimension():
         return 4096
 
 
+def get_configured_index_mode():
+    mode = os.getenv("RAG_EMBEDDING_MODE", "keyword").strip().lower()
+    if mode in {"semantic", "embedding", "sentence-transformers", "sentence_transformers"}:
+        return "semantic"
+    return "keyword"
+
+
+def get_embedding_model_name():
+    return os.getenv("RAG_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL).strip() or DEFAULT_EMBEDDING_MODEL
+
+
+def load_embedding_model():
+    global embedding_model, active_embedding_model_name
+
+    model_name = get_embedding_model_name()
+    if embedding_model is not None and active_embedding_model_name == model_name:
+        return embedding_model
+
+    from sentence_transformers import SentenceTransformer
+
+    embedding_model = SentenceTransformer(model_name)
+    active_embedding_model_name = model_name
+    return embedding_model
+
+
+def normalize_embeddings(embeddings):
+    embeddings = np.asarray(embeddings, dtype="float32")
+    if embeddings.ndim == 1:
+        embeddings = embeddings.reshape(1, -1)
+
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    return embeddings / norms
+
+
+def encode_semantic_texts(texts):
+    model = load_embedding_model()
+    embeddings = model.encode(
+        texts,
+        convert_to_numpy=True,
+        show_progress_bar=False,
+    )
+    return normalize_embeddings(embeddings)
+
+
+def normalize_match_text(text: str):
+    return re.sub(r"\s+", "", str(text or "")).lower()
+
+
+def title_match_boost(query_text: str, title: str):
+    query_text = normalize_match_text(query_text)
+    title = normalize_match_text(title)
+
+    if not query_text or not title:
+        return 0.0, []
+
+    matched = []
+    boost = 0.0
+    if title in query_text:
+        boost = TITLE_MATCH_BOOST
+        matched.append(f"标题命中：{title}")
+    elif len(title) >= 3:
+        core_title = re.sub(r"(片|胶囊|颗粒|口服液|滴眼液|喷雾|软膏|乳膏|散|丸|贴|说明书)$", "", title)
+        if len(core_title) >= 2 and core_title in query_text:
+            boost = TITLE_MATCH_BOOST
+            matched.append(f"标题核心词命中：{core_title}")
+
+    return boost, matched
+
+
+def keyword_match_boost(query_text: str, keywords):
+    query_text = normalize_match_text(query_text)
+    matched = []
+
+    for keyword in keywords or []:
+        normalized = normalize_match_text(keyword)
+        if len(normalized) >= 2 and normalized in query_text:
+            matched.append(keyword)
+
+    unique_matched = []
+    for item in matched:
+        if item not in unique_matched:
+            unique_matched.append(item)
+
+    boost = min(len(unique_matched) * KEYWORD_MATCH_BOOST, MAX_KEYWORD_BOOST)
+    return boost, unique_matched
+
+
+def add_exact_match_candidates(question: str, candidates):
+    seen_titles = {item["doc"].get("title", "") for item in candidates}
+
+    for doc in documents:
+        if doc.get("title", "") in seen_titles:
+            continue
+
+        title_boost, _title_matches = title_match_boost(question, doc.get("title", ""))
+        keyword_boost, _keyword_matches = keyword_match_boost(question, doc.get("keywords", []))
+        if title_boost > 0 or keyword_boost > 0:
+            candidates.append({
+                "doc": doc,
+                "score": 0.0,
+            })
+            seen_titles.add(doc.get("title", ""))
+
+    return candidates
+
+
+def hybrid_rank_results(question: str, candidates):
+    ranked = []
+
+    for candidate in candidates:
+        doc = candidate["doc"]
+        base_score = float(candidate["score"])
+        title_boost, title_matches = title_match_boost(question, doc.get("title", ""))
+        keyword_boost, keyword_matches = keyword_match_boost(question, doc.get("keywords", []))
+        hybrid_score = min(base_score + title_boost + keyword_boost, 1.0)
+
+        ranked.append({
+            **candidate,
+            "hybrid_score": hybrid_score,
+            "boost": title_boost + keyword_boost,
+            "match_reason": title_matches + [
+                f"关键词命中：{item}" for item in keyword_matches
+            ],
+        })
+
+    ranked.sort(key=lambda item: item["hybrid_score"], reverse=True)
+    return ranked
+
+
 def term_hash_id(term: str, dimension: int):
     digest = hashlib.blake2b(term.encode("utf-8"), digest_size=8).digest()
     return int.from_bytes(digest, "little") % dimension
@@ -343,16 +483,45 @@ def init_vector_store():
     初始化 FAISS 向量库
     """
     global index, documents, vocab, term_to_id, vector_dimension
+    global active_index_mode, configured_index_mode, active_embedding_model_name, fallback_reason
 
     documents = build_documents()
 
     if not documents:
         raise ValueError("知识库为空，无法构建向量索引。")
 
+    configured_index_mode = get_configured_index_mode()
+    fallback_reason = ""
     vocab = build_vocab(documents)
     term_to_id = {}
-    vector_dimension = get_vector_dimension()
 
+    if configured_index_mode == "semantic":
+        try:
+            embeddings = encode_semantic_texts([doc["content"] for doc in documents])
+            vector_dimension = embeddings.shape[1]
+            dimension = embeddings.shape[1]
+
+            index = faiss.IndexFlatIP(dimension)
+            index.add(embeddings)
+            active_index_mode = "semantic"
+
+            return {
+                "doc_count": len(documents),
+                "dimension": dimension,
+                "vocab_size": len(vocab),
+                "index_mode": active_index_mode,
+                "configured_mode": configured_index_mode,
+                "embedding_model": active_embedding_model_name,
+                "fallback": False,
+                "fallback_reason": "",
+                "message": "使用 sentence-transformers 语义向量构建FAISS索引成功"
+            }
+        except Exception as exc:
+            fallback_reason = f"语义向量模型不可用，已降级为关键词检索：{exc}"
+
+    active_index_mode = "keyword"
+    active_embedding_model_name = ""
+    vector_dimension = get_vector_dimension()
     embeddings = np.zeros((len(documents), vector_dimension), dtype="float32")
 
     for row_index, doc in enumerate(documents):
@@ -360,7 +529,6 @@ def init_vector_store():
         embeddings[row_index] = vectorize_text(terms, keywords=doc.get("keywords", []))
 
     dimension = embeddings.shape[1]
-
     index = faiss.IndexFlatIP(dimension)
     index.add(embeddings)
 
@@ -368,6 +536,11 @@ def init_vector_store():
         "doc_count": len(documents),
         "dimension": dimension,
         "vocab_size": len(vocab),
+        "index_mode": active_index_mode,
+        "configured_mode": configured_index_mode,
+        "embedding_model": active_embedding_model_name,
+        "fallback": configured_index_mode != active_index_mode,
+        "fallback_reason": fallback_reason,
         "message": "使用固定维度关键词哈希向量构建FAISS索引成功"
     }
 
@@ -381,37 +554,61 @@ def search_knowledge(question: str, top_k: int = 3, score_threshold: float = MIN
     if index is None:
         init_vector_store()
 
-    query_terms = expand_question_terms(question)
+    if active_index_mode == "semantic":
+        query_vector = encode_semantic_texts([question]).astype("float32")
+        effective_score_threshold = SEMANTIC_MIN_SCORE if score_threshold == MIN_SCORE else score_threshold
+    else:
+        query_terms = expand_question_terms(question)
 
-    # 给用户问题中的命中词加权，提高症状词、同义词对检索结果的影响
-    query_vector = vectorize_text(
-        query_terms,
-        keywords=list(query_terms)
-    ).reshape(1, -1).astype("float32")
+        # 给用户问题中的命中词加权，提高症状词、同义词对检索结果的影响
+        query_vector = vectorize_text(
+            query_terms,
+            keywords=list(query_terms)
+        ).reshape(1, -1).astype("float32")
+        effective_score_threshold = score_threshold
 
     # 如果问题完全没有命中词表，直接返回空
     if np.linalg.norm(query_vector) == 0:
         return []
 
-    # 多取一些，再做过滤，避免 top_k 太小导致有效结果被挤掉
-    search_k = min(max(top_k * 3, top_k), len(documents))
+    # 多取一些，再做混合重排，避免语义召回把精确药名/病名挤掉
+    search_k = min(max(top_k * 8, top_k, 20), len(documents))
     scores, indices = index.search(query_vector, search_k)
 
-    results = []
+    candidates = []
 
     for score, idx in zip(scores[0], indices[0]):
         if idx == -1:
             continue
 
-        if score < score_threshold:
+        if score < effective_score_threshold:
             continue
 
         doc = documents[idx]
 
+        candidates.append({
+            "doc": doc,
+            "score": float(score),
+        })
+
+    candidates = add_exact_match_candidates(question, candidates)
+    ranked_candidates = hybrid_rank_results(question, candidates)
+
+    results = []
+    for candidate in ranked_candidates:
+        if candidate["hybrid_score"] < effective_score_threshold:
+            continue
+
+        doc = candidate["doc"]
+
         results.append({
             "title": doc["title"],
             "doc_type": doc["doc_type"],
-            "score": float(score),
+            "score": float(candidate["hybrid_score"]),
+            "base_score": float(candidate["score"]),
+            "boost": float(candidate["boost"]),
+            "match_reason": candidate["match_reason"],
+            "index_mode": active_index_mode,
             "content": doc["content"],
             "raw": doc["raw"]
         })

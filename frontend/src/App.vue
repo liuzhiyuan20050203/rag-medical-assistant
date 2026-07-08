@@ -21,7 +21,7 @@
         <RouterLink to="/history">历史记录</RouterLink>
         <RouterLink v-if="isAdmin" to="/analytics">数据分析</RouterLink>
         <RouterLink v-if="isAdmin" to="/admin">管理后台</RouterLink>
-        <RouterLink to="/login">登录/注册</RouterLink>
+        <RouterLink to="/login">{{ accountLabel }}</RouterLink>
       </nav>
     </header>
 
@@ -42,6 +42,7 @@ const loadCurrentUser = () => {
 }
 
 const isAdmin = computed(() => currentUser.value?.role === 'admin')
+const accountLabel = computed(() => currentUser.value?.username || '登录/注册')
 
 onMounted(() => {
   loadCurrentUser()

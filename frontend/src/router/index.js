@@ -22,11 +22,6 @@ const router = createRouter({
       component: ChatView,
     },
     {
-      path: '/medicine',
-      name: 'medicine',
-      redirect: '/chat',
-    },
-    {
       path: '/knowledge',
       name: 'knowledge',
       component: KnowledgeView,
@@ -50,11 +45,6 @@ const router = createRouter({
       path: '/analytics',
       name: 'analytics',
       component: AnalyticsView,
-    },
-    {
-      path: '/multimodal',
-      name: 'multimodal',
-      redirect: '/chat',
     },
   ],
 })
