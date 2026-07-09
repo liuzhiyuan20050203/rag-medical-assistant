@@ -3,6 +3,7 @@
     <p class="eyebrow">ADMIN ONLY</p>
     <h2>需要管理员登录</h2>
     <p>管理员后台包含知识库写入、向量索引更新和问答审核操作，请先使用管理员账号登录。</p>
+    <p v-if="statusMessage" class="status-message">{{ statusMessage }}</p>
     <RouterLink to="/login">去登录</RouterLink>
   </div>
 
@@ -609,10 +610,20 @@ const authHeaders = (extra = {}) => {
   }
 }
 
+const clearStaleAdminSession = () => {
+  localStorage.removeItem('ragUser')
+  localStorage.removeItem('ragToken')
+  user.value = null
+  window.dispatchEvent(new Event('rag-user-change'))
+}
+
 const parseAdminResponse = async (response) => {
   if (response.status === 401 || response.status === 403) {
     statusMessage.value = '管理员登录已失效或权限不足，请重新登录管理员账号。'
-    throw new Error('admin forbidden')
+    clearStaleAdminSession()
+    const error = new Error('admin forbidden')
+    error.expectedAuthFailure = true
+    throw error
   }
 
   return response.json()
@@ -735,7 +746,9 @@ const loadAdminData = async (force = false) => {
     agentRuns.value = runsData.data || []
     syncUserEdits()
   } catch (error) {
-    console.error(error)
+    if (!error.expectedAuthFailure) {
+      console.error(error)
+    }
     if (!statusMessage.value) {
       statusMessage.value = '后台数据加载失败，请检查后端服务是否正常运行。'
     }

@@ -1,27 +1,27 @@
 <template>
   <div class="page">
-    <div class="page-title">
+    <div class="page-title ui-page-heading">
       <h2>问答历史记录</h2>
       <p>
         系统会自动保存最近的 AI 医疗助手对话，便于查看用户问题、系统回答、危险提醒和检索结果。
       </p>
     </div>
 
-    <div class="toolbar">
-      <button @click="loadHistory(true)" :disabled="loading">
+    <div class="toolbar ui-toolbar">
+      <button class="ui-button ui-button--primary" @click="loadHistory(true)" :disabled="loading">
         {{ loading ? '加载中...' : '刷新记录' }}
       </button>
 
-      <button class="clear-btn" @click="clearHistory">
+      <button class="clear-btn ui-button ui-button--danger" @click="clearHistory">
         清空历史
       </button>
     </div>
 
-    <div v-if="historyList.length === 0" class="empty">
+    <div v-if="historyList.length === 0" class="empty ui-empty">
       暂无历史记录，请先到“AI 助手”页面进行咨询。
     </div>
 
-    <div v-for="item in historyList" :key="item.id" class="history-card">
+    <div v-for="item in historyList" :key="item.id" class="history-card ui-card">
       <div class="card-header">
         <div>
           <strong>问题：{{ displayQuestion(item.question) }}</strong>
@@ -30,20 +30,20 @@
         <button
           v-if="item.session_id"
           type="button"
-          class="continue-btn"
+          class="continue-btn ui-button ui-button--soft"
           @click="continueConversation(item.session_id)"
         >
           继续对话
         </button>
       </div>
 
-      <div v-if="hasImageInput(item.question)" class="input-tag">
+      <div v-if="hasImageInput(item.question)" class="input-tag ui-badge ui-badge--info">
         已上传图片，图片识别信息已作为 AI 分析输入。
       </div>
 
       <div
         v-if="item.warning && item.warning.has_warning"
-        class="warning"
+        class="warning ui-alert ui-alert--error"
       >
         危险提醒：{{ item.warning.matched.join('、') }}
       </div>
@@ -90,12 +90,13 @@
           </div>
 
           <textarea
+            class="ui-textarea"
             v-model="getDraft(item).feedbackText"
             placeholder="填写详细评价，例如：回答是否准确、是否看得懂、还需要补充哪些内容。"
           ></textarea>
 
           <button
-            class="feedback-submit"
+            class="feedback-submit ui-button ui-button--primary"
             @click="submitFeedback(item.id)"
             :disabled="!getDraft(item).rating"
           >
@@ -264,61 +265,9 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.page-title {
-  margin-bottom: 24px;
-}
-
-.page-title h2 {
-  font-size: 30px;
-  margin-bottom: 10px;
-  color: #111827;
-}
-
-.page-title p {
-  color: #6b7280;
-  line-height: 1.8;
-}
-
-.toolbar {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-button {
-  padding: 11px 22px;
-  background: #2563eb;
-  color: white;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-button:disabled {
-  background: #9ca3af;
-  cursor: not-allowed;
-}
-
-.clear-btn {
-  background: #dc2626;
-}
-
-.empty {
-  background: white;
-  padding: 28px;
-  border-radius: 16px;
-  color: #6b7280;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
-}
-
 .history-card {
-  background: white;
   margin-bottom: 22px;
   padding: 24px;
-  border-radius: 16px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 
 .card-header {
@@ -326,7 +275,7 @@ button:disabled {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--border);
   padding-bottom: 14px;
   margin-bottom: 16px;
 }
@@ -338,53 +287,32 @@ button:disabled {
 }
 
 .card-header strong {
-  color: #111827;
+  color: var(--text-primary);
 }
 
 .card-header span {
-  color: #6b7280;
+  color: var(--text-muted);
   font-size: 14px;
 }
 
 .continue-btn {
   flex: 0 0 auto;
   min-height: 36px;
-  padding: 0 14px;
-  color: #0f766e;
-  background: #ccfbf1;
-  border: 1px solid #99f6e4;
-  border-radius: 8px;
   font-size: 14px;
-}
-
-.continue-btn:hover {
-  background: #99f6e4;
 }
 
 .input-tag {
   width: max-content;
   margin-bottom: 14px;
-  padding: 6px 10px;
-  color: #075985;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 700;
 }
 
 .warning {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #991b1b;
-  padding: 12px 16px;
-  border-radius: 10px;
   margin-bottom: 16px;
 }
 
 .answer h4,
 .docs h4 {
-  color: #2563eb;
+  color: var(--medical-blue);
   margin-bottom: 10px;
 }
 
@@ -392,7 +320,7 @@ pre {
   white-space: pre-wrap;
   line-height: 1.8;
   font-size: 15px;
-  color: #374151;
+  color: var(--text-secondary);
   font-family: "Microsoft YaHei", Arial, sans-serif;
 }
 
@@ -401,20 +329,20 @@ pre {
 }
 
 .doc-item {
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  border: 1px solid var(--border);
   padding: 12px 14px;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   margin-top: 10px;
 }
 
 .doc-item span {
   margin-left: 8px;
   font-size: 12px;
-  color: white;
-  background: #2563eb;
+  color: var(--surface);
+  background: var(--medical-blue);
   padding: 3px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .feedback {
@@ -422,7 +350,7 @@ pre {
   gap: 12px;
   margin-top: 18px;
   padding-top: 16px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--border);
 }
 
 .feedback-title {
@@ -438,11 +366,11 @@ pre {
 }
 
 .feedback-title strong {
-  color: #111827;
+  color: var(--text-primary);
 }
 
 .feedback-title span {
-  color: #6b7280;
+  color: var(--text-muted);
   font-size: 13px;
   font-weight: 700;
 }
@@ -467,34 +395,16 @@ pre {
   padding: 0;
   color: #cbd5e1;
   background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   font-size: 22px;
   line-height: 1;
 }
 
 .star-rating button.active {
-  color: #d97706;
-  background: #fff7ed;
-  border-color: #fed7aa;
-}
-
-.feedback textarea {
-  width: 100%;
-  min-height: 88px;
-  padding: 12px;
-  color: #374151;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  resize: vertical;
-  outline: none;
-  line-height: 1.7;
-}
-
-.feedback textarea:focus {
-  background: #ffffff;
-  border-color: #2563eb;
+  color: var(--medicine-amber);
+  background: var(--warning-soft);
+  border-color: var(--warning-border);
 }
 
 .feedback-submit {

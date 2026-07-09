@@ -1,6 +1,6 @@
 <template>
   <div class="analytics-page">
-    <section class="analytics-hero">
+    <section class="analytics-hero ui-card">
       <div>
         <p class="eyebrow">DATA ANALYTICS</p>
         <h2>可视化分析</h2>
@@ -9,40 +9,40 @@
         </p>
       </div>
 
-      <button type="button" @click="loadAnalytics(true)" :disabled="loading">
+      <button class="ui-button ui-button--primary" type="button" @click="loadAnalytics(true)" :disabled="loading">
         {{ loading ? '加载中...' : '刷新分析' }}
       </button>
     </section>
 
     <section class="overview-grid">
-      <article>
+      <article class="ui-card">
         <strong>{{ analytics.overview.total_questions }}</strong>
         <span>用户提问</span>
       </article>
-      <article>
+      <article class="ui-card">
         <strong>{{ analytics.overview.warning_count }}</strong>
         <span>高风险提醒</span>
       </article>
-      <article>
+      <article class="ui-card">
         <strong>{{ analytics.overview.medicine_search_count }}</strong>
         <span>药品查询</span>
       </article>
-      <article>
+      <article class="ui-card">
         <strong>{{ analytics.overview.error_count }}</strong>
         <span>错误标记</span>
       </article>
-      <article>
+      <article class="ui-card">
         <strong>{{ analytics.overview.average_rating || 0 }}</strong>
         <span>平均评分</span>
       </article>
-      <article>
+      <article class="ui-card">
         <strong>{{ analytics.overview.knowledge_count }}</strong>
         <span>知识总量</span>
       </article>
     </section>
 
     <section class="chart-grid">
-      <article class="chart-card wide">
+      <article class="chart-card wide ui-card">
         <div class="section-title">
           <div>
             <p class="eyebrow">SYMPTOMS</p>
@@ -60,10 +60,10 @@
           </div>
         </div>
 
-        <p v-else class="empty-state">暂无症状命中数据，完成几次 AI 助手咨询后会自动生成。</p>
+        <p v-else class="empty-state ui-empty">暂无症状命中数据，完成几次 AI 助手咨询后会自动生成。</p>
       </article>
 
-      <article class="chart-card risk-card">
+      <article class="chart-card risk-card ui-card">
         <div class="section-title">
           <div>
             <p class="eyebrow">RISK</p>
@@ -86,7 +86,7 @@
         </div>
       </article>
 
-      <article class="chart-card">
+      <article class="chart-card ui-card">
         <div class="section-title">
           <div>
             <p class="eyebrow">DISEASES</p>
@@ -102,10 +102,10 @@
           </div>
         </div>
 
-        <p v-else class="empty-state">暂无疾病检索记录。</p>
+        <p v-else class="empty-state ui-empty">暂无疾病检索记录。</p>
       </article>
 
-      <article class="chart-card">
+      <article class="chart-card ui-card">
         <div class="section-title">
           <div>
             <p class="eyebrow">MEDICINES</p>
@@ -121,10 +121,10 @@
           </div>
         </div>
 
-        <p v-else class="empty-state">暂无药品查询记录。</p>
+        <p v-else class="empty-state ui-empty">暂无药品查询记录。</p>
       </article>
 
-      <article class="chart-card wide">
+      <article class="chart-card wide ui-card">
         <div class="section-title">
           <div>
             <p class="eyebrow">WORD CLOUD</p>
@@ -142,10 +142,10 @@
           </span>
         </div>
 
-        <p v-else class="empty-state">暂无词云数据。</p>
+        <p v-else class="empty-state ui-empty">暂无词云数据。</p>
       </article>
 
-      <article class="chart-card">
+      <article class="chart-card ui-card">
         <div class="section-title">
           <div>
             <p class="eyebrow">SATISFACTION</p>
@@ -164,7 +164,7 @@
         </div>
       </article>
 
-      <article class="chart-card">
+      <article class="chart-card ui-card">
         <div class="section-title">
           <div>
             <p class="eyebrow">TREND</p>
@@ -179,11 +179,11 @@
           </div>
         </div>
 
-        <p v-else class="empty-state">暂无趋势数据。</p>
+        <p v-else class="empty-state ui-empty">暂无趋势数据。</p>
       </article>
     </section>
 
-    <p v-if="message" class="message">{{ message }}</p>
+    <p v-if="message" class="message ui-alert ui-alert--error">{{ message }}</p>
   </div>
 </template>
 
@@ -221,7 +221,7 @@ const totalRisk = computed(() => {
 
 const riskGradient = computed(() => {
   if (!totalRisk.value) {
-    return 'conic-gradient(#e2e8f0 0deg 360deg)'
+    return 'conic-gradient(var(--border) 0deg 360deg)'
   }
 
   let current = 0
@@ -246,30 +246,30 @@ const barWidth = (item, items) => {
 
 const riskColor = (name) => {
   if (name.includes('高风险')) {
-    return '#dc2626'
+    return 'var(--danger)'
   }
 
   if (name.includes('信息不足')) {
-    return '#d97706'
+    return 'var(--medicine-amber)'
   }
 
-  return '#0f9f8e'
+  return 'var(--clinical-green)'
 }
 
 const satisfactionColor = (name) => {
   if (name === '5星' || name === '4星') {
-    return '#0f9f8e'
+    return 'var(--clinical-green)'
   }
 
   if (name === '3星') {
-    return '#d97706'
+    return 'var(--medicine-amber)'
   }
 
   if (name === '2星' || name === '1星') {
-    return '#dc2626'
+    return 'var(--danger)'
   }
 
-  return '#94a3b8'
+  return 'var(--text-muted)'
 }
 
 const wordStyle = (item) => {
@@ -280,8 +280,8 @@ const wordStyle = (item) => {
 
   return {
     fontSize: `${14 + ratio * 20}px`,
-    color: ratio > 0.66 ? '#2563eb' : ratio > 0.35 ? '#0e7490' : '#40556d',
-    borderColor: ratio > 0.45 ? '#bfdbfe' : '#dbe7ef',
+    color: ratio > 0.66 ? 'var(--medical-blue)' : ratio > 0.35 ? 'var(--pharmacy-teal)' : 'var(--text-secondary)',
+    borderColor: ratio > 0.45 ? 'var(--info-border)' : 'var(--border)',
   }
 }
 
@@ -316,14 +316,6 @@ onMounted(() => {
   gap: 24px;
 }
 
-.analytics-hero,
-.chart-card {
-  background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
-}
-
 .analytics-hero {
   display: flex;
   align-items: center;
@@ -332,7 +324,7 @@ onMounted(() => {
   padding: clamp(24px, 4vw, 42px);
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(236, 253, 245, 0.86)),
-    #ffffff;
+    var(--surface);
 }
 
 .eyebrow {
@@ -357,20 +349,9 @@ onMounted(() => {
   line-height: 1.9;
 }
 
-button {
+.analytics-hero .ui-button {
   flex: 0 0 auto;
-  min-height: 44px;
-  padding: 0 18px;
-  color: #ffffff;
-  background: var(--medical-blue);
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 900;
-}
-
-button:disabled {
-  background: #94a3b8;
-  cursor: not-allowed;
+  min-height: var(--control-height-lg);
 }
 
 .overview-grid {
@@ -383,10 +364,6 @@ button:disabled {
   min-height: 108px;
   padding: 20px 14px;
   text-align: center;
-  background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
 }
 
 .overview-grid strong {
@@ -457,8 +434,8 @@ button:disabled {
 .bar-track {
   height: 16px;
   overflow: hidden;
-  background: #edf6fb;
-  border-radius: 999px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-pill);
 }
 
 .bar-track i {
@@ -489,7 +466,7 @@ button:disabled {
   width: 110px;
   height: 110px;
   content: "";
-  background: #ffffff;
+  background: var(--surface);
   border-radius: 50%;
 }
 
@@ -533,8 +510,8 @@ button:disabled {
   align-items: center;
   padding: 14px;
   background: #f8fbfd;
-  border: 1px solid #e4edf3;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
 }
 
 .rank-item span {
@@ -542,9 +519,9 @@ button:disabled {
   width: 30px;
   height: 30px;
   place-items: center;
-  color: #ffffff;
+  color: var(--surface);
   background: var(--medical-blue);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-weight: 900;
 }
 
@@ -578,7 +555,7 @@ button:disabled {
   padding: 4px 12px;
   background: #f8fbfd;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-weight: 900;
 }
 
@@ -603,8 +580,8 @@ button:disabled {
 .satisfaction-list div div {
   height: 16px;
   overflow: hidden;
-  background: #edf6fb;
-  border-radius: 999px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-pill);
 }
 
 .satisfaction-list i {
@@ -645,20 +622,12 @@ button:disabled {
 }
 
 .empty-state {
-  padding: 18px;
-  color: var(--text-secondary);
-  background: #f8fbfd;
-  border: 1px dashed var(--border-strong);
-  border-radius: 8px;
+  border-style: dashed;
+  box-shadow: none;
   line-height: 1.8;
 }
 
 .message {
-  padding: 13px 16px;
-  color: #991b1b;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
   font-weight: 800;
 }
 

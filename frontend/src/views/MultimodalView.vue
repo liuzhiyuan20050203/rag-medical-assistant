@@ -1,35 +1,35 @@
 <template>
   <div class="page">
-    <div class="page-title">
+    <div class="page-title ui-page-heading">
       <h2>多模态识别</h2>
       <p>上传图片、抽取视频关键帧，或用语音整理症状。页面只展示整理后的结论、依据和下一步建议。</p>
     </div>
 
-    <div class="module-tabs">
-      <button type="button" :class="{ active: activeModule === 'image' }" @click="activeModule = 'image'">
+    <div class="module-tabs ui-tabs">
+      <button class="ui-tab" type="button" :class="{ active: activeModule === 'image' }" @click="activeModule = 'image'">
         图片识别
       </button>
-      <button type="button" :class="{ active: activeModule === 'video' }" @click="activeModule = 'video'">
+      <button class="ui-tab" type="button" :class="{ active: activeModule === 'video' }" @click="activeModule = 'video'">
         视频识别
       </button>
-      <button type="button" :class="{ active: activeModule === 'voice' }" @click="activeModule = 'voice'">
+      <button class="ui-tab" type="button" :class="{ active: activeModule === 'voice' }" @click="activeModule = 'voice'">
         语音输入
       </button>
     </div>
 
     <div class="status-panel">
-      <div>
+      <div class="ui-card">
         <strong>视觉模型状态</strong>
         <span>{{ multimodalStatusText }}</span>
       </div>
-      <div>
+      <div class="ui-card">
         <strong>当前链路</strong>
         <span>图片/视频 → 视觉分析 → 数据库命中 → RAG补充 → 就诊建议</span>
       </div>
     </div>
 
     <section v-if="activeModule === 'image'" class="module-layout">
-      <div class="tool-panel">
+      <div class="tool-panel ui-card">
         <div class="panel-heading">
           <p>IMAGE MODULE</p>
           <h3>图片识别</h3>
@@ -41,25 +41,26 @@
         </label>
 
         <textarea
+          class="ui-textarea"
           v-model="imageNote"
           placeholder="补充图片背景，例如：皮肤红疹三天、喉咙痛、药盒说明书、伤口变化等。"
         ></textarea>
 
-        <button type="button" @click="analyzeImage" :disabled="imageLoading || !imagePreview">
+        <button class="ui-button ui-button--primary" type="button" @click="analyzeImage" :disabled="imageLoading || !imagePreview">
           {{ imageLoading ? '识别中...' : '开始识别图片' }}
         </button>
       </div>
 
-      <div class="preview-panel">
+      <div class="preview-panel ui-card">
         <img v-if="imagePreview" :src="imagePreview" alt="上传图片预览" />
-        <div v-else class="empty-state">等待上传图片</div>
+        <div v-else class="empty-state ui-empty">等待上传图片</div>
       </div>
 
       <AnswerBlock v-if="imageResult" title="图片识别结果" :result="imageResult" />
     </section>
 
     <section v-if="activeModule === 'video'" class="module-layout">
-      <div class="tool-panel">
+      <div class="tool-panel ui-card">
         <div class="panel-heading">
           <p>VIDEO MODULE</p>
           <h3>视频关键帧识别</h3>
@@ -71,21 +72,22 @@
         </label>
 
         <textarea
+          class="ui-textarea"
           v-model="videoNote"
           placeholder="补充视频背景，例如：皮肤变化、药品包装、咽喉画面、症状动作等。"
         ></textarea>
 
         <div class="action-row">
-          <button type="button" @click="extractVideoFrames" :disabled="frameLoading || !videoUrl">
+          <button class="ui-button ui-button--primary" type="button" @click="extractVideoFrames" :disabled="frameLoading || !videoUrl">
             {{ frameLoading ? '抽帧中...' : '抽取关键帧' }}
           </button>
-          <button type="button" @click="analyzeVideo" :disabled="videoLoading || framePreviews.length === 0">
+          <button class="ui-button ui-button--primary" type="button" @click="analyzeVideo" :disabled="videoLoading || framePreviews.length === 0">
             {{ videoLoading ? '分析中...' : '分析视频' }}
           </button>
         </div>
       </div>
 
-      <div class="video-area">
+      <div class="video-area ui-card">
         <video
           v-if="videoUrl"
           ref="videoRef"
@@ -95,11 +97,11 @@
           preload="metadata"
           @loadedmetadata="syncVideoDuration"
         ></video>
-        <div v-else class="empty-state">等待上传视频</div>
+        <div v-else class="empty-state ui-empty">等待上传视频</div>
       </div>
 
       <div v-if="framePreviews.length" class="frame-strip">
-        <figure v-for="frame in framePreviews" :key="frame.timestamp">
+        <figure v-for="frame in framePreviews" :key="frame.timestamp" class="ui-card">
           <img :src="frame.image" alt="视频关键帧" />
           <figcaption>{{ frame.timestamp.toFixed(1) }}s</figcaption>
         </figure>
@@ -109,7 +111,7 @@
     </section>
 
     <section v-if="activeModule === 'voice'" class="voice-layout">
-      <div class="tool-panel">
+      <div class="tool-panel ui-card">
         <div class="panel-heading">
           <p>VOICE MODULE</p>
           <h3>语音症状输入</h3>
@@ -120,25 +122,26 @@
         </div>
 
         <div class="voice-controls">
-          <button type="button" @click="startVoice" :disabled="voiceListening || !speechSupported">
+          <button class="ui-button ui-button--primary" type="button" @click="startVoice" :disabled="voiceListening || !speechSupported">
             {{ voiceListening ? '识别中...' : '开始语音输入' }}
           </button>
-          <button type="button" class="secondary" @click="stopVoice" :disabled="!voiceListening">
+          <button type="button" class="secondary ui-button ui-button--soft" @click="stopVoice" :disabled="!voiceListening">
             停止
           </button>
-          <button type="button" class="secondary" @click="clearVoice">
+          <button type="button" class="secondary ui-button ui-button--soft" @click="clearVoice">
             清空
           </button>
         </div>
 
         <textarea
+          class="ui-textarea"
           v-model="voiceText"
           placeholder="语音识别文本会出现在这里；也可以直接输入或修改后分析。"
         ></textarea>
 
         <div v-if="voiceInterim" class="interim-text">{{ voiceInterim }}</div>
 
-        <button type="button" @click="analyzeVoice" :disabled="voiceLoading || !voiceText.trim()">
+        <button class="ui-button ui-button--primary" type="button" @click="analyzeVoice" :disabled="voiceLoading || !voiceText.trim()">
           {{ voiceLoading ? '分析中...' : '分析症状文本' }}
         </button>
       </div>
@@ -205,7 +208,7 @@ const AnswerBlock = defineComponent({
 
       const advice = value.visit_advice
 
-      return h('div', { class: 'visit-advice' }, [
+      return h('div', { class: 'visit-advice ui-section' }, [
         h('h4', '建议就诊'),
         h('div', { class: 'visit-grid' }, [
           h('p', [h('strong', '处理级别：'), advice.urgency || '请结合症状观察']),
@@ -237,7 +240,7 @@ const AnswerBlock = defineComponent({
         ? `视觉模型已参与识别：${llm.model || llm.provider || '已配置模型'}`
         : `视觉模型未启用：${llm.error || '当前使用本地分析、数据库和RAG'}`
 
-      return h('p', { class: ['source-note', llm.used ? 'source-ok' : 'source-warn'] }, text)
+      return h('p', { class: ['source-note', 'ui-alert', llm.used ? 'ui-alert--success source-ok' : 'ui-alert--warning source-warn'] }, text)
     }
 
     return () => {
@@ -246,7 +249,7 @@ const AnswerBlock = defineComponent({
       const databaseMatches = summarizeDatabaseMatches(props.result.database_context)
       const retrievedDocs = summarizeRetrievedDocs(props.result.retrieved_docs)
 
-      return h('article', { class: ['answer-card', props.result.success ? 'ok' : 'error'] }, [
+      return h('article', { class: ['answer-card', 'ui-card', props.result.success ? 'ok' : 'error'] }, [
         h('div', { class: 'answer-heading' }, [
           h('div', [
             h('p', props.title),
@@ -267,7 +270,7 @@ const AnswerBlock = defineComponent({
         section('数据库命中', databaseMatches),
         section('RAG检索依据', retrievedDocs),
         section('还需要补充的信息', value.follow_up_questions),
-        h('p', { class: 'notice' }, value.medical_notice || props.result.medical_notice || '本结果不能替代医生诊断或药师指导。'),
+        h('p', { class: 'notice ui-alert ui-alert--warning' }, value.medical_notice || props.result.medical_notice || '本结果不能替代医生诊断或药师指导。'),
       ])
     }
   },
@@ -634,29 +637,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.page-title {
-  margin-bottom: 22px;
-}
-
-.page-title h2 {
-  color: #111827;
-  font-size: 30px;
-  margin-bottom: 10px;
-}
-
-.page-title p {
-  max-width: 920px;
-  color: #64748b;
-  line-height: 1.8;
-}
-
-.module-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 22px;
-}
-
 .status-panel {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -664,12 +644,8 @@ onBeforeUnmount(() => {
   margin-bottom: 22px;
 }
 
-.status-panel div {
+.status-panel .ui-card {
   padding: 14px 16px;
-  background: #ffffff;
-  border: 1px solid #dbe6f0;
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
 }
 
 .status-panel strong,
@@ -679,48 +655,14 @@ onBeforeUnmount(() => {
 
 .status-panel strong {
   margin-bottom: 4px;
-  color: #111827;
+  color: var(--text-primary);
   font-size: 13px;
   font-weight: 900;
 }
 
 .status-panel span {
-  color: #475569;
+  color: var(--text-secondary);
   line-height: 1.6;
-}
-
-.module-tabs button,
-button {
-  min-height: 42px;
-  padding: 0 16px;
-  color: #ffffff;
-  background: #2563eb;
-  border: 0;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 800;
-}
-
-.module-tabs button {
-  color: #334155;
-  background: #ffffff;
-  border: 1px solid #dbe6f0;
-}
-
-.module-tabs button.active {
-  color: #ffffff;
-  background: #2563eb;
-  border-color: #2563eb;
-}
-
-button:disabled {
-  background: #94a3b8;
-  cursor: not-allowed;
-}
-
-button.secondary {
-  color: #2563eb;
-  background: #eff6ff;
 }
 
 .module-layout,
@@ -734,17 +676,6 @@ button.secondary {
   grid-template-columns: minmax(320px, 0.9fr) minmax(320px, 1.1fr);
 }
 
-.tool-panel,
-.preview-panel,
-.video-area,
-.answer-card,
-.metrics-panel {
-  background: #ffffff;
-  border: 1px solid #dbe6f0;
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
-}
-
 .tool-panel {
   display: grid;
   gap: 14px;
@@ -754,7 +685,7 @@ button.secondary {
 
 .panel-heading p {
   margin-bottom: 6px;
-  color: #0f766e;
+  color: var(--pharmacy-teal);
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0;
@@ -763,7 +694,7 @@ button.secondary {
 .panel-heading h3,
 .answer-card h3,
 .metrics-panel h3 {
-  color: #111827;
+  color: var(--text-primary);
   font-size: 22px;
   font-weight: 900;
 }
@@ -772,10 +703,10 @@ button.secondary {
   display: grid;
   min-height: 48px;
   place-items: center;
-  color: #2563eb;
-  background: #eff6ff;
-  border: 1px dashed #93c5fd;
-  border-radius: 8px;
+  color: var(--info-text);
+  background: var(--info-soft);
+  border: 1px dashed var(--info-border);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-weight: 800;
 }
@@ -784,22 +715,8 @@ button.secondary {
   display: none;
 }
 
-textarea {
-  width: 100%;
+.ui-textarea {
   min-height: 118px;
-  padding: 14px;
-  color: #1f2937;
-  background: #f8fbfd;
-  border: 1px solid #dbe6f0;
-  border-radius: 8px;
-  resize: vertical;
-  line-height: 1.7;
-  outline: none;
-}
-
-textarea:focus {
-  background: #ffffff;
-  border-color: #2563eb;
 }
 
 .preview-panel,
@@ -818,8 +735,8 @@ textarea:focus {
 }
 
 .empty-state {
-  color: #64748b;
   font-weight: 800;
+  box-shadow: none;
 }
 
 .action-row,
@@ -839,9 +756,6 @@ textarea:focus {
 .frame-strip figure {
   margin: 0;
   overflow: hidden;
-  background: #ffffff;
-  border: 1px solid #dbe6f0;
-  border-radius: 8px;
 }
 
 .frame-strip img {
@@ -853,7 +767,7 @@ textarea:focus {
 
 .frame-strip figcaption {
   padding: 8px 10px;
-  color: #475569;
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 800;
 }
@@ -865,8 +779,8 @@ textarea:focus {
 }
 
 .answer-card.error {
-  border-color: #fecaca;
-  background: #fff7f7;
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
 }
 
 .answer-heading {
@@ -880,7 +794,7 @@ textarea:focus {
 
 .answer-heading p {
   margin-bottom: 4px;
-  color: #0f766e;
+  color: var(--pharmacy-teal);
   font-size: 12px;
   font-weight: 900;
 }
@@ -891,33 +805,33 @@ textarea:focus {
   align-items: center;
   min-height: 30px;
   padding: 0 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 12px;
   font-weight: 900;
 }
 
 .risk-低 {
-  color: #166534;
-  background: #dcfce7;
+  color: var(--success-text);
+  background: var(--success-soft);
 }
 
 .risk-中 {
-  color: #92400e;
+  color: var(--warning-text);
   background: #fef3c7;
 }
 
 .risk-高 {
   color: #991b1b;
-  background: #fee2e2;
+  background: var(--danger-soft);
 }
 
 .risk-未知 {
-  color: #475569;
+  color: var(--text-secondary);
   background: #e2e8f0;
 }
 
 .conclusion {
-  color: #111827;
+  color: var(--text-primary);
   font-size: 18px;
   font-weight: 800;
   line-height: 1.75;
@@ -926,41 +840,22 @@ textarea:focus {
 .scene-line,
 .notice {
   margin-top: 10px;
-  color: #475569;
   line-height: 1.7;
 }
 
 .source-note {
   margin: -4px 0 12px;
-  padding: 10px 12px;
-  border-radius: 8px;
   font-weight: 800;
-  line-height: 1.6;
-}
-
-.source-ok {
-  color: #166534;
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-}
-
-.source-warn {
-  color: #92400e;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
 }
 
 .visit-advice {
   margin-top: 16px;
   padding: 16px;
-  background: #f8fafc;
-  border: 1px solid #dbe6f0;
-  border-radius: 8px;
 }
 
 .visit-advice h4 {
   margin-bottom: 10px;
-  color: #111827;
+  color: var(--text-primary);
   font-size: 16px;
   font-weight: 900;
 }
@@ -973,12 +868,12 @@ textarea:focus {
 
 .visit-grid p {
   margin: 0;
-  color: #334155;
+  color: var(--text-secondary);
   line-height: 1.7;
 }
 
 .visit-grid strong {
-  color: #111827;
+  color: var(--text-primary);
 }
 
 .answer-section {
@@ -987,7 +882,7 @@ textarea:focus {
 
 .answer-section h4 {
   margin-bottom: 8px;
-  color: #334155;
+  color: var(--text-secondary);
   font-size: 15px;
   font-weight: 900;
 }
@@ -997,13 +892,13 @@ textarea:focus {
   gap: 8px;
   margin: 0;
   padding-left: 20px;
-  color: #1f2937;
+  color: var(--text-primary);
   line-height: 1.7;
 }
 
 .model-chip {
   margin-top: 14px;
-  color: #155e75;
+  color: var(--pharmacy-teal);
   background: #cffafe;
 }
 
@@ -1016,35 +911,35 @@ textarea:focus {
 
 .metrics-grid span {
   padding: 10px 12px;
-  color: #334155;
+  color: var(--text-secondary);
   background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   font-weight: 800;
 }
 
 .voice-status {
   padding: 12px 14px;
-  color: #155e75;
+  color: var(--pharmacy-teal);
   background: #ecfeff;
   border: 1px solid #a5f3fc;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-weight: 800;
   line-height: 1.6;
 }
 
 .voice-status.warning {
-  color: #92400e;
-  background: #fffbeb;
-  border-color: #fde68a;
+  color: var(--warning-text);
+  background: var(--warning-soft);
+  border-color: var(--warning-border);
 }
 
 .interim-text {
   padding: 10px 12px;
-  color: #075985;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
+  color: var(--info-text);
+  background: var(--info-soft);
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius-sm);
   line-height: 1.7;
 }
 

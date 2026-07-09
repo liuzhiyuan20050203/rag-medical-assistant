@@ -14,6 +14,23 @@
   --pharmacy-teal: #0e7490;
   --medicine-amber: #d97706;
   --danger: #dc2626;
+  --danger-soft: #fef2f2;
+  --danger-border: #fecaca;
+  --warning-text: #92400e;
+  --warning-soft: #fff7ed;
+  --warning-border: #fed7aa;
+  --success-text: #166534;
+  --success-soft: #f0fdf4;
+  --success-border: #bbf7d0;
+  --info-text: #1d4ed8;
+  --info-soft: #eff6ff;
+  --info-border: #bfdbfe;
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-pill: 999px;
+  --control-height-sm: 36px;
+  --control-height-md: 40px;
+  --control-height-lg: 46px;
   --shadow-sm: 0 8px 20px rgba(15, 23, 42, 0.06);
   --shadow-md: 0 18px 44px rgba(15, 23, 42, 0.1);
 }

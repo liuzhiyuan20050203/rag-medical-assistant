@@ -8,241 +8,116 @@
           <p>
             系统会统一处理文字、语音和图片线索，优先识别危险信号，再检索知识库生成参考建议。
           </p>
+          <button type="button" class="new-session-btn" :disabled="loading" @click="startNewConversation">
+            <Plus :size="17" aria-hidden="true" />
+            新对话
+          </button>
         </div>
 
-        <div class="quick-panel">
-          <div class="section-title">
-            <strong>咨询提示</strong>
-            <span>描述越清楚越好</span>
+        <button type="button" class="side-toggle" @click="sidePanelOpen = !sidePanelOpen">
+          <ChevronDown :class="{ open: sidePanelOpen }" :size="16" aria-hidden="true" />
+          历史会话与咨询提示
+        </button>
+
+        <div :class="['side-content', { open: sidePanelOpen }]">
+          <div class="session-panel">
+            <div class="section-title">
+              <strong>历史会话</strong>
+              <button type="button" :disabled="sessionsLoading" @click="loadConversationSessions">
+                <RefreshCw :size="14" aria-hidden="true" />
+                {{ sessionsLoading ? '刷新中' : '刷新' }}
+              </button>
+            </div>
+
+            <div v-if="!currentUser" class="session-empty">
+              登录后会自动保存历史会话，并可从这里继续对话。
+            </div>
+            <div v-else-if="sessionsLoading" class="session-empty">
+              正在加载历史会话...
+            </div>
+            <div v-else-if="conversationSessions.length === 0" class="session-empty">
+              暂无历史会话，发送第一条消息后会自动保存。
+            </div>
+            <div v-else class="session-list">
+              <button
+                v-for="session in conversationSessions"
+                :key="session.id"
+                type="button"
+                :class="{ active: Number(activeSessionId) === Number(session.id) }"
+                @click="openConversationSession(session.id)"
+              >
+                <History :size="15" aria-hidden="true" />
+                <span>{{ session.title || `会话 #${session.id}` }}</span>
+                <small>{{ session.message_count || 0 }} 条消息</small>
+              </button>
+            </div>
+
+            <p v-if="sessionsStatus && currentUser" class="session-status">{{ sessionsStatus }}</p>
           </div>
-          <article
-            v-for="item in consultationTips"
-            :key="item.label"
-            class="quick-card"
-          >
-            <strong>{{ item.label }}</strong>
-            <span>{{ item.hint }}</span>
-          </article>
-        </div>
 
-        <div v-if="isAdmin" class="admin-tip">
-          <strong>管理员模式</strong>
-          <span>可查看 Agent 调度、可靠性评分和工具调用链路。</span>
+          <div class="quick-panel">
+            <div class="section-title">
+              <strong>咨询提示</strong>
+              <span>描述越清楚越好</span>
+            </div>
+            <article
+              v-for="item in consultationTips"
+              :key="item.label"
+              class="quick-card"
+            >
+              <strong>{{ item.label }}</strong>
+              <span>{{ item.hint }}</span>
+            </article>
+          </div>
+
+          <div v-if="isAdmin" class="admin-tip">
+            <strong>管理员模式</strong>
+            <span>可查看 Agent 调度、可靠性评分和工具调用链路。</span>
+          </div>
         </div>
       </aside>
 
       <main class="chat-main">
         <div ref="conversationRef" class="conversation">
-          <article class="message assistant-message">
-            <div class="avatar">AI</div>
-            <div class="bubble">
-              <strong>你好，我是 AI 医疗 Agent，可以帮你梳理症状和用药问题。</strong>
-              <p>
-                你可以直接描述症状、询问药品禁忌，或上传药盒、症状照片、检查单图片。
-              </p>
-            </div>
-          </article>
+          <ChatMessage
+            :message="welcomeMessage"
+            :is-admin="isAdmin"
+            :interactive="false"
+          />
 
-          <article
+          <ChatMessage
             v-for="message in messages"
             :key="message.id"
-            :class="['message', `${message.role}-message`]"
-          >
-            <div class="avatar">{{ message.role === 'user' ? '我' : 'AI' }}</div>
-            <div class="bubble">
-              <div v-if="message.type === 'loading'" class="typing">
-                <span></span>
-                <span></span>
-                <span></span>
-                正在分析你的描述...
-              </div>
-
-              <template v-else>
-                <pre>{{ message.content }}</pre>
-
-                <div v-if="message.role === 'assistant'" class="message-actions">
-                  <span v-if="message.llm" :class="['llm-badge', message.llm.used ? 'llm-on' : 'llm-off']">
-                    {{ message.llm.used ? `AI 大模型参与：${message.llm.model || message.llm.provider || '已启用'}` : '本地知识库模板回答' }}
-                  </span>
-                  <button
-                    v-if="speechSynthesisSupported"
-                    type="button"
-                    @click="toggleSpeak(message)"
-                  >
-                    {{ speakingMessageId === message.id ? '停止朗读' : '朗读回答' }}
-                  </button>
-                </div>
-
-                <div v-if="message.role === 'assistant' && message.historyId" class="feedback-panel">
-                  <span>{{ message.feedbackStatus || '这次回答有帮助吗？' }}</span>
-                  <div class="feedback-actions">
-                    <button
-                      v-for="item in feedbackOptions"
-                      :key="item.label"
-                      type="button"
-                      :class="{ active: message.feedbackType === item.label }"
-                      :disabled="message.feedbackLoading"
-                      @click="submitFeedback(message, item)"
-                    >
-                      {{ item.label }}
-                    </button>
-                  </div>
-                </div>
-
-                <div v-if="message.warning?.has_warning" class="inline-warning">
-                  <strong>需要优先注意</strong>
-                  <p>{{ message.warning.message }}</p>
-                  <div class="tag-list">
-                    <span v-for="item in message.warning.matched" :key="item">{{ item }}</span>
-                  </div>
-                </div>
-
-                <div v-if="message.role === 'assistant' && message.reliability" :class="['reliability-note', reliabilityClass(message.reliability)]">
-                  <strong>{{ message.reliability.label || reliabilityLevelLabel(message.reliability.level) }}</strong>
-                  <p>{{ message.reliability.message }}</p>
-                </div>
-
-                <div v-if="message.followups?.length" class="followup-list">
-                  <button
-                    v-for="item in message.followups"
-                    :key="item"
-                    type="button"
-                    @click="appendFollowup(item)"
-                  >
-                    {{ item }}
-                  </button>
-                </div>
-
-                <div v-if="message.docs?.length" class="source-list">
-                  <details>
-                    <summary>查看参考知识来源 {{ message.docs.length }} 条</summary>
-                    <div v-for="(doc, index) in message.docs" :key="index" class="source-card">
-                      <strong>{{ index + 1 }}. {{ doc.title || '知识片段' }}</strong>
-                      <span>{{ doc.doc_type === 'medicine' ? '药品' : '常见病' }}</span>
-                      <p>{{ doc.content }}</p>
-                    </div>
-                  </details>
-                </div>
-
-                <details v-if="isAdmin && message.trace" class="agent-panel">
-                  <summary>
-                    <span>Agent 调度</span>
-                    <b>{{ labelAction(message.action) }}</b>
-                  </summary>
-                  <p class="agent-decision">{{ agentDecisionSummary(message) }}</p>
-                  <div class="agent-metrics">
-                    <div>
-                      <small>意图</small>
-                      <b>{{ labelIntent(message.intent) }}</b>
-                    </div>
-                    <div>
-                      <small>综合可靠性</small>
-                      <b>{{ formatConfidence(message.reliability?.final_score ?? message.confidence) }}</b>
-                    </div>
-                    <div v-if="message.reliability">
-                      <small>安全风险</small>
-                      <b>{{ safetyLevelLabels[message.reliability.safety_level] || message.reliability.safety_level }}</b>
-                    </div>
-                  </div>
-                  <div v-if="message.reliability?.components" class="reliability-breakdown">
-                    <div v-for="item in reliabilityComponents(message.reliability)" :key="item.key">
-                      <span>{{ item.label }}</span>
-                      <b>{{ formatConfidence(item.value) }}</b>
-                    </div>
-                  </div>
-                  <p v-if="message.reliability?.method" class="reliability-method">
-                    {{ message.reliability.method }}
-                  </p>
-                  <p>{{ message.trace.summary || message.trace.reason }}</p>
-                  <div class="tool-list">
-                    <span v-for="tool in message.trace.used_tools" :key="tool">{{ labelTool(tool) }}</span>
-                  </div>
-                </details>
-
-                <div v-if="isAdmin && message.error" class="error-box">
-                  <strong>Agent 处理异常</strong>
-                  <p>{{ message.error.message }}</p>
-                  <span>{{ message.error.type }}</span>
-                </div>
-              </template>
-            </div>
-          </article>
+            :message="message"
+            :is-admin="isAdmin"
+            :speech-synthesis-supported="speechSynthesisSupported"
+            :speaking-message-id="speakingMessageId"
+            :feedback-options="feedbackOptions"
+            @toggle-speak="toggleSpeak"
+            @submit-feedback="submitFeedback"
+            @append-followup="appendFollowup"
+          />
         </div>
 
-        <form class="composer" @submit.prevent="submitQuestion">
-          <div v-if="attachmentVisible || speechStatusText" class="composer-status">
-            <div v-if="attachmentVisible" class="attachment-pill">
-              <img v-if="imagePreview" :src="imagePreview" alt="已添加的图片" />
-              <Paperclip v-else :size="18" aria-hidden="true" />
-              <span>{{ attachmentLabel }}</span>
-              <b v-if="imageLoading">处理中</b>
-              <button type="button" title="移除附件" aria-label="移除附件" @click="clearAttachment">
-                <X :size="16" aria-hidden="true" />
-              </button>
-            </div>
-
-            <span v-if="speechStatusText" class="subtle-status">{{ speechStatusText }}</span>
-          </div>
-
-          <div class="chat-composer-bar">
-            <button
-              type="button"
-              class="icon-btn voice-btn"
-              :class="{ active: isListening }"
-              :disabled="!speechRecognitionSupported"
-              :title="isListening ? '停止语音输入' : '语音输入'"
-              :aria-label="isListening ? '停止语音输入' : '语音输入'"
-              @click="toggleVoiceInput"
-            >
-              <MicOff v-if="isListening" :size="22" aria-hidden="true" />
-              <Mic v-else :size="22" aria-hidden="true" />
-            </button>
-
-            <textarea
-              ref="textareaRef"
-              v-model="question"
-              :placeholder="mainPlaceholder"
-              rows="1"
-              @input="resizeComposer"
-              @keydown.enter.exact.prevent="submitQuestion"
-            ></textarea>
-
-            <input
-              ref="imageInputRef"
-              type="file"
-              accept="image/*"
-              class="sr-only"
-              @change="handleImageFile"
-            />
-
-            <button
-              type="button"
-              class="icon-btn"
-              title="添加图片"
-              aria-label="添加图片"
-              :disabled="loading || imageLoading"
-              @click="openImagePicker"
-            >
-              <Image :size="22" aria-hidden="true" />
-            </button>
-
-            <button
-              type="submit"
-              class="icon-btn send-btn"
-              :disabled="loading || imageLoading || !canSubmit"
-              :title="loading || imageLoading ? '处理中' : '发送'"
-              :aria-label="loading || imageLoading ? '处理中' : '发送'"
-            >
-              <LoaderCircle v-if="loading || imageLoading" :size="22" aria-hidden="true" />
-              <Send v-else :size="22" aria-hidden="true" />
-            </button>
-          </div>
-
-          <button type="button" class="clear-chat-btn" @click="clearConversation" :disabled="loading">
-            <Trash2 :size="16" aria-hidden="true" />
-            清空对话
-          </button>
-        </form>
+        <ChatComposer
+          ref="composerRef"
+          v-model="question"
+          :attachment-visible="attachmentVisible"
+          :image-preview="imagePreview"
+          :attachment-label="attachmentLabel"
+          :image-loading="imageLoading"
+          :speech-status-text="speechStatusText"
+          :is-listening="isListening"
+          :speech-recognition-supported="speechRecognitionSupported"
+          :loading="loading"
+          :can-submit="canSubmit"
+          :main-placeholder="mainPlaceholder"
+          @submit="submitQuestion"
+          @toggle-voice="toggleVoiceInput"
+          @image-file="handleImageFile"
+          @clear-attachment="clearAttachment"
+          @clear-conversation="startNewConversation"
+        />
 
         <section class="safety-note">
           <strong>安全提示：</strong>
@@ -256,17 +131,12 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  Image,
-  LoaderCircle,
-  Mic,
-  MicOff,
-  Paperclip,
-  Send,
-  Trash2,
-  X,
-} from '@lucide/vue'
-import { apiUrl } from '../api'
+import { ChevronDown, History, Plus, RefreshCw } from '@lucide/vue'
+import { apiUrl, clearPageCacheByPrefix } from '../api'
+import ChatComposer from '../components/chat/ChatComposer.vue'
+import ChatMessage from '../components/chat/ChatMessage.vue'
+import { useChatSession } from '../composables/useChatSession'
+import { useSpeechInput } from '../composables/useSpeechInput'
 
 const route = useRoute()
 const router = useRouter()
@@ -298,59 +168,11 @@ const feedbackOptions = [
   { label: '答非所问', rating: 1, text: '回答和问题不匹配' },
 ]
 
-const actionLabels = {
-  danger_alert: '危险症状提醒',
-  ask_followup: '追问关键信息',
-  rag_answer: '症状知识库问答',
-  medicine_query: '药品知识库查询',
-  image_assist: '图片线索辅助分析',
-  empty_input: '等待补充输入',
-  agent_error: 'Agent 调度异常',
-}
-
-const intentLabels = {
-  unknown: '未知输入',
-  danger_alert: '疑似危险症状',
-  followup: '信息不足需要追问',
-  medicine_query: '药品用药咨询',
-  image_assist: '图片相关健康咨询',
-  symptom_query: '常见症状咨询',
-  symptom_image: '症状图片咨询',
-  general_health: '一般健康咨询',
-}
-
-const toolLabels = {
-  normalize_input: '整理文字/语音/图片输入',
-  warning_check: '危险症状规则检查',
-  rule_planner: '规则意图判断',
-  llm_planner: '大模型意图规划',
-  medicine_search: '药品知识库查询',
-  rag_search: 'RAG 知识库检索',
-  llm_answer: '大模型生成回答',
-  local_fallback: '本地模板兜底回答',
-  agent_chat: 'Agent 统一调度入口',
-}
-
-const reliabilityLabels = {
-  high: '资料匹配充分',
-  medium: '资料匹配一般',
-  low: '依据偏弱',
-  insufficient: '依据不足',
-}
-
-const reliabilityComponentLabels = {
-  knowledge_match: '知识库匹配',
-  faithfulness: '回答支撑度',
-  answer_relevance: '问题相关度',
-  input_completeness: '输入完整度',
-  consistency: '多轮一致性',
-  source_authority: '来源权威度',
-}
-
-const safetyLevelLabels = {
-  high: '高',
-  medium: '中',
-  low: '低',
+const welcomeMessage = {
+  id: 'welcome',
+  role: 'assistant',
+  title: '你好，我是 AI 医疗 Agent，可以帮你梳理症状和用药问题。',
+  content: '你可以直接描述症状、询问药品禁忌，或上传药盒、症状照片、检查单图片。',
 }
 
 const inputType = ref('text')
@@ -362,23 +184,51 @@ const imageFileName = ref('')
 const imageFileRef = ref(null)
 const imageLoading = ref(false)
 const imageStatus = ref('')
-const messages = ref([])
 const loading = ref(false)
-const currentUser = ref(null)
-const activeSessionId = ref(null)
 const conversationRef = ref(null)
-const textareaRef = ref(null)
-const imageInputRef = ref(null)
-const recognition = ref(null)
-const isListening = ref(false)
-const speechStatus = ref('')
-const speakingMessageId = ref('')
-const restoringSession = ref(false)
-const restoreStatus = ref('')
-
-const getSpeechRecognition = () => window.SpeechRecognition || window.webkitSpeechRecognition
-const speechRecognitionSupported = ref(false)
+const composerRef = ref(null)
 const speechSynthesisSupported = ref(false)
+const speakingMessageId = ref('')
+const sidePanelOpen = ref(false)
+const loadingStageTimers = []
+
+const scrollToBottom = async () => {
+  await nextTick()
+  const el = conversationRef.value
+  if (el) {
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: 'smooth',
+    })
+  }
+}
+
+const {
+  messages,
+  currentUser,
+  activeSessionId,
+  conversationSessions,
+  sessionsLoading,
+  sessionsStatus,
+  restoreStatus,
+  isAdmin,
+  authHeaders,
+  loadCurrentUser,
+  saveChatCache,
+  clearCurrentConversation,
+  loadConversationSessions,
+  restoreChatCache,
+  restoreSessionFromServer,
+} = useChatSession({ scrollToBottom })
+
+const {
+  isListening,
+  speechStatus,
+  speechRecognitionSupported,
+  refreshSpeechSupport,
+  toggleVoiceInput,
+  stopRecognition,
+} = useSpeechInput(question)
 
 const canSubmit = computed(() => {
   return Boolean(
@@ -389,8 +239,6 @@ const canSubmit = computed(() => {
     || imageTagsText.value.trim()
   )
 })
-
-const isAdmin = computed(() => currentUser.value?.role === 'admin')
 
 const attachmentVisible = computed(() => Boolean(imagePreview.value || imageFileName.value || imageStatus.value))
 
@@ -412,158 +260,52 @@ const speechStatusText = computed(() => {
   return ''
 })
 
-const labelAction = (action) => actionLabels[action] || action || '未判断'
-
-const labelIntent = (intent) => intentLabels[intent] || intent || '未识别'
-
-const labelTool = (tool) => toolLabels[tool] || tool
-
-const agentDecisionSummary = (message) => {
-  const action = labelAction(message.action)
-  const intent = labelIntent(message.intent)
-  const tools = (message.trace?.used_tools || []).map(labelTool)
-
-  if (message.action === 'danger_alert') {
-    return 'Agent 决策：识别到可能的危险症状，优先触发安全提醒，并跳过普通咨询流程。'
-  }
-
-  if (message.action === 'medicine_query') {
-    return 'Agent 决策：识别为药品或用药问题，优先调用药品知识库，再组织安全回答。'
-  }
-
-  if (message.action === 'ask_followup') {
-    return 'Agent 决策：当前信息不足，先追问关键症状、持续时间或特殊人群信息。'
-  }
-
-  if (message.action === 'rag_answer') {
-    return 'Agent 决策：识别为常见症状咨询，调用 RAG 知识库检索相关依据后生成回答。'
-  }
-
-  if (message.action === 'image_assist') {
-    return 'Agent 决策：将图片识别结果作为辅助线索，并结合文字描述和知识库进行判断。'
-  }
-
-  return `Agent 决策：识别意图为“${intent}”，执行“${action}”${tools.length ? `，调用了${tools.join('、')}` : ''}。`
+const resizeComposer = async () => {
+  await composerRef.value?.resize()
 }
 
-const chatCacheKey = computed(() => {
-  const userKey = currentUser.value?.id || currentUser.value?.username || 'guest'
-  return `rag-chat-current:${userKey}`
-})
-
-const loadCurrentUser = () => {
-  const raw = localStorage.getItem('ragUser')
-  currentUser.value = raw ? JSON.parse(raw) : null
+const focusComposer = () => {
+  composerRef.value?.focus()
 }
 
-const saveChatCache = () => {
-  const cache = {
-    activeSessionId: activeSessionId.value,
-    messages: messages.value.filter((message) => message.type !== 'loading'),
-    savedAt: Date.now(),
-  }
-  sessionStorage.setItem(chatCacheKey.value, JSON.stringify(cache))
+const invalidateHistoryCaches = () => {
+  clearPageCacheByPrefix('history:list:')
+  clearPageCacheByPrefix('admin:')
+  clearPageCacheByPrefix('analytics:')
+  clearPageCacheByPrefix('home:')
 }
 
-const clearChatCache = () => {
-  sessionStorage.removeItem(chatCacheKey.value)
-}
-
-const restoreChatCache = async () => {
-  const raw = sessionStorage.getItem(chatCacheKey.value)
-  if (!raw) return false
-
-  try {
-    const cache = JSON.parse(raw)
-    activeSessionId.value = cache.activeSessionId || null
-    messages.value = Array.isArray(cache.messages) ? cache.messages : []
-    await scrollToBottom()
-    return messages.value.length > 0
-  } catch (error) {
-    clearChatCache()
-    console.error(error)
-    return false
+const clearLoadingStageTimers = () => {
+  while (loadingStageTimers.length) {
+    window.clearTimeout(loadingStageTimers.pop())
   }
 }
 
-const mapStoredMessage = (message) => {
-  if (message.role === 'user') {
-    return {
-      id: `stored-user-${message.id}`,
-      role: 'user',
-      content: message.content || '',
-    }
-  }
-
-  return {
-    id: `stored-assistant-${message.id}`,
-    role: 'assistant',
-    content: message.content || '',
-    warning: message.warning || message.trace?.warning || null,
-    followups: message.followup_questions || [],
-    docs: message.retrieved_docs || [],
-    trace: message.trace || null,
-    action: message.action || '',
-    intent: message.intent || message.trace?.intent || '',
-    confidence: message.confidence ?? message.trace?.confidence ?? null,
-    reliability: message.reliability || message.trace?.reliability || null,
-    error: null,
-    historyId: message.history_id || null,
-    feedbackType: '',
-    feedbackStatus: '',
-    feedbackLoading: false,
+const updateLoadingStage = (loadingId, stage) => {
+  const loadingMessage = messages.value.find((item) => item.id === loadingId)
+  if (loadingMessage?.type === 'loading') {
+    loadingMessage.loadingStage = stage
   }
 }
 
-const restoreSessionFromServer = async (sessionId) => {
-  if (!sessionId || restoringSession.value) return
+const scheduleLoadingStages = (loadingId, hasImageAnalysis) => {
+  clearLoadingStageTimers()
+  const stages = hasImageAnalysis
+    ? [
+        { delay: 0, stage: 'image' },
+        { delay: 1000, stage: 'safety' },
+        { delay: 1900, stage: 'retrieval' },
+        { delay: 3200, stage: 'generation' },
+      ]
+    : [
+        { delay: 0, stage: 'safety' },
+        { delay: 1100, stage: 'retrieval' },
+        { delay: 2600, stage: 'generation' },
+      ]
 
-  restoringSession.value = true
-  restoreStatus.value = '正在恢复历史会话...'
-
-  try {
-    const response = await fetch(apiUrl(`/api/conversations/${sessionId}`), {
-      headers: authHeaders(),
-    })
-    const data = await response.json()
-
-    if (!response.ok || !data.success) {
-      restoreStatus.value = data.message || '历史会话恢复失败。'
-      return
-    }
-
-    const detail = data.data || {}
-    activeSessionId.value = detail.id || Number(sessionId)
-    messages.value = (detail.messages || []).map(mapStoredMessage).filter((item) => item.content)
-    saveChatCache()
-    restoreStatus.value = `已恢复历史会话 #${activeSessionId.value}`
-    await scrollToBottom()
-  } catch (error) {
-    restoreStatus.value = '历史会话恢复失败，请检查后端服务。'
-    console.error(error)
-  } finally {
-    restoringSession.value = false
-  }
-}
-
-const authHeaders = (extra = {}) => {
-  const token = localStorage.getItem('ragToken') || ''
-
-  return {
-    ...extra,
-    Authorization: `Bearer ${token}`,
-  }
-}
-
-const scrollToBottom = async () => {
-  await nextTick()
-  const el = conversationRef.value
-  if (el) {
-    el.scrollTo({
-      top: el.scrollHeight,
-      behavior: 'smooth',
-    })
-  }
+  stages.forEach(({ delay, stage }) => {
+    loadingStageTimers.push(window.setTimeout(() => updateLoadingStage(loadingId, stage), delay))
+  })
 }
 
 const parseImageTags = () => imageTagsText.value
@@ -622,109 +364,6 @@ const isImageFile = (file) => {
   const type = String(file?.type || '').toLowerCase()
   const name = String(file?.name || '').toLowerCase()
   return type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|heic|heif)$/i.test(name)
-}
-
-const formatConfidence = (value) => {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) {
-    return '暂无'
-  }
-
-  return `${Math.round(Number(value) * 100)}%`
-}
-
-const reliabilityLevelLabel = (level) => reliabilityLabels[level] || '待评估'
-
-const reliabilityClass = (reliability) => `reliability-${reliability?.level || 'unknown'}`
-
-const reliabilityComponents = (reliability) => Object.entries(reliability?.components || {})
-  .map(([key, value]) => ({
-    key,
-    label: reliabilityComponentLabels[key] || key,
-    value,
-  }))
-
-const resizeComposer = async () => {
-  await nextTick()
-  const textarea = textareaRef.value
-  if (!textarea) return
-
-  textarea.style.height = 'auto'
-  textarea.style.height = `${Math.min(textarea.scrollHeight, 150)}px`
-}
-
-const setupRecognition = () => {
-  const SpeechRecognition = getSpeechRecognition()
-  if (!SpeechRecognition || recognition.value) return
-
-  const instance = new SpeechRecognition()
-  instance.lang = 'zh-CN'
-  instance.continuous = true
-  instance.interimResults = true
-
-  let finalText = ''
-
-  instance.onstart = () => {
-    finalText = question.value.trim() ? `${question.value.trim()} ` : ''
-    isListening.value = true
-    speechStatus.value = '正在听，请自然说出你的症状。'
-  }
-
-  instance.onresult = (event) => {
-    let interimText = ''
-    for (let index = event.resultIndex; index < event.results.length; index += 1) {
-      const result = event.results[index]
-      const transcript = result[0]?.transcript || ''
-      if (result.isFinal) {
-        finalText += transcript
-      } else {
-        interimText += transcript
-      }
-    }
-
-    const recognizedText = `${finalText}${interimText}`.trim()
-    if (recognizedText) {
-      question.value = recognizedText
-      speechStatus.value = interimText ? '正在识别...' : '已识别，可继续说或点击停止。'
-    }
-  }
-
-  instance.onerror = (event) => {
-    isListening.value = false
-    speechStatus.value = event.error === 'not-allowed'
-      ? '麦克风权限被拒绝，请允许浏览器使用麦克风。'
-      : `语音识别失败：${event.error || '未知错误'}`
-  }
-
-  instance.onend = () => {
-    isListening.value = false
-    if (!speechStatus.value.includes('失败') && !speechStatus.value.includes('拒绝')) {
-      speechStatus.value = question.value.trim()
-        ? '识别已结束，可以检查文字后发送。'
-        : '识别已结束，未获取到清晰语音。'
-    }
-    finalText = question.value
-  }
-
-  recognition.value = instance
-}
-
-const toggleVoiceInput = () => {
-  speechRecognitionSupported.value = Boolean(getSpeechRecognition())
-
-  if (!speechRecognitionSupported.value) {
-    speechStatus.value = '当前浏览器不支持语音识别，建议使用 Chrome 或 Edge。'
-    return
-  }
-
-  setupRecognition()
-
-  if (isListening.value) {
-    recognition.value?.stop()
-    return
-  }
-
-  speechStatus.value = ''
-  recognition.value?.start()
 }
 
 const stopSpeaking = () => {
@@ -794,11 +433,16 @@ const submitFeedback = async (message, option) => {
   }
 }
 
-const handleImageFile = async (event) => {
-  const file = event.target.files?.[0]
+const handleImageFile = async (file) => {
   if (!file) return
 
   clearAttachment()
+
+  if (!isImageFile(file)) {
+    imageStatus.value = '请选择图片文件。'
+    return
+  }
+
   inputType.value = question.value.trim() ? 'mixed' : 'image'
   imageFileName.value = file.name
   imageFileRef.value = file
@@ -813,11 +457,6 @@ const handleImageFile = async (event) => {
     imageFileRef.value = null
     imageStatus.value = '图片读取失败，请重新选择图片。'
   }
-  event.target.value = ''
-}
-
-const openImagePicker = () => {
-  imageInputRef.value?.click()
 }
 
 const clearAttachment = () => {
@@ -920,21 +559,32 @@ const appendFollowup = async (item) => {
     ? `${question.value.trim()}\n${item}`
     : item
   await nextTick()
-  textareaRef.value?.focus()
+  focusComposer()
+  await resizeComposer()
 }
 
-const clearConversation = () => {
-  messages.value = []
-  activeSessionId.value = null
-  restoreStatus.value = ''
+const startNewConversation = async () => {
+  if (loading.value) return
+
+  clearCurrentConversation()
   question.value = ''
   clearAttachment()
-  clearChatCache()
+  stopSpeaking()
   if (route.query.session_id) {
-    router.replace({ path: '/chat' })
+    await router.replace({ path: '/chat' })
   }
-  textareaRef.value?.focus()
-  resizeComposer()
+  focusComposer()
+  await resizeComposer()
+}
+
+const openConversationSession = (sessionId) => {
+  if (!sessionId || loading.value) return
+  router.push({
+    path: '/chat',
+    query: {
+      session_id: sessionId,
+    },
+  })
 }
 
 const buildUserText = (payload) => {
@@ -949,6 +599,7 @@ const buildUserText = (payload) => {
   }
   return parts.join('\n')
 }
+
 const getPayloadInputType = (payload) => {
   if (payload.text && payload.image_summary) return 'mixed'
   if (payload.image_summary) return 'image'
@@ -1018,11 +669,14 @@ const submitQuestion = async () => {
     id: loadingId,
     role: 'assistant',
     type: 'loading',
+    hasImageAnalysis: Boolean(pendingImagePreview && !imageSummary.value.trim()),
+    loadingStage: pendingImagePreview && !imageSummary.value.trim() ? 'image' : 'safety',
     content: '',
   })
 
   question.value = ''
   loading.value = true
+  scheduleLoadingStages(loadingId, Boolean(pendingImagePreview && !imageSummary.value.trim()))
   await resizeComposer()
   await scrollToBottom()
 
@@ -1089,6 +743,8 @@ const submitQuestion = async () => {
       messages.value.push(assistantMessage)
     }
     saveChatCache()
+    invalidateHistoryCaches()
+    await loadConversationSessions()
   } catch (error) {
     const loadingIndex = messages.value.findIndex((item) => item.id === loadingId)
     const errorMessage = {
@@ -1108,17 +764,23 @@ const submitQuestion = async () => {
     }
     console.error(error)
   } finally {
+    clearLoadingStageTimers()
     loading.value = false
     await scrollToBottom()
   }
 }
 
-onMounted(() => {
+const syncCurrentUser = () => {
   loadCurrentUser()
-  speechRecognitionSupported.value = Boolean(getSpeechRecognition())
+  loadConversationSessions()
+}
+
+onMounted(() => {
+  syncCurrentUser()
+  refreshSpeechSupport()
   speechSynthesisSupported.value = 'speechSynthesis' in window
-  window.addEventListener('storage', loadCurrentUser)
-  window.addEventListener('rag-user-change', loadCurrentUser)
+  window.addEventListener('storage', syncCurrentUser)
+  window.addEventListener('rag-user-change', syncCurrentUser)
   const sessionId = route.query.session_id
   if (sessionId) {
     restoreSessionFromServer(sessionId)
@@ -1141,10 +803,11 @@ watch(
 
 onBeforeUnmount(() => {
   saveChatCache()
-  recognition.value?.stop()
+  clearLoadingStageTimers()
+  stopRecognition()
   stopSpeaking()
-  window.removeEventListener('storage', loadCurrentUser)
-  window.removeEventListener('rag-user-change', loadCurrentUser)
+  window.removeEventListener('storage', syncCurrentUser)
+  window.removeEventListener('rag-user-change', syncCurrentUser)
 })
 </script>
 
@@ -1158,7 +821,7 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
   gap: 14px;
-  height: calc(100vh - 156px);
+  height: calc(100dvh - 156px);
   min-height: 600px;
 }
 
@@ -1174,6 +837,7 @@ onBeforeUnmount(() => {
 }
 
 .assistant-card,
+.session-panel,
 .quick-panel,
 .admin-tip,
 .chat-main,
@@ -1185,6 +849,8 @@ onBeforeUnmount(() => {
 }
 
 .assistant-card {
+  display: grid;
+  gap: 10px;
   padding: 16px;
 }
 
@@ -1213,9 +879,50 @@ onBeforeUnmount(() => {
 
 .assistant-card p,
 .section-title span,
+.session-empty,
+.session-status,
 .admin-tip span,
 .safety-note {
   color: var(--text-muted);
+}
+
+.new-session-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 12px;
+  color: #ffffff;
+  background: var(--medical-blue);
+  border: 1px solid var(--medical-blue);
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.new-session-btn:hover:not(:disabled) {
+  background: var(--medical-blue-dark);
+}
+
+.new-session-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.side-toggle {
+  display: none;
+}
+
+.side-content {
+  display: grid;
+  gap: 10px;
+}
+
+.session-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
 }
 
 .quick-panel {
@@ -1237,6 +944,94 @@ onBeforeUnmount(() => {
 
 .section-title span {
   font-size: 12px;
+}
+
+.section-title button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 8px;
+  color: var(--text-muted);
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.section-title button:hover:not(:disabled) {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.section-title button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.session-empty,
+.session-status {
+  padding: 10px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.session-list {
+  display: grid;
+  gap: 7px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.session-list button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 7px;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 10px;
+  color: var(--text-secondary);
+  text-align: left;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.session-list button:hover,
+.session-list button.active {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.session-list svg {
+  grid-row: span 2;
+}
+
+.session-list span,
+.session-list small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-list span {
+  font-weight: 800;
+}
+
+.session-list small {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .quick-card {
@@ -1291,677 +1086,6 @@ onBeforeUnmount(() => {
   scroll-behavior: smooth;
 }
 
-.message {
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  gap: 12px;
-  max-width: 860px;
-}
-
-.user-message {
-  align-self: flex-end;
-  grid-template-columns: minmax(0, 1fr) 42px;
-  max-width: 720px;
-}
-
-.user-message .avatar {
-  grid-column: 2;
-  grid-row: 1;
-}
-
-.user-message .bubble {
-  grid-column: 1;
-  grid-row: 1;
-  color: #ffffff;
-  background: var(--medical-blue);
-  border-color: var(--medical-blue);
-}
-
-.avatar {
-  display: grid;
-  width: 42px;
-  height: 42px;
-  place-items: center;
-  color: #ffffff;
-  background: linear-gradient(135deg, var(--medical-blue), var(--clinical-green));
-  border-radius: 8px;
-  font-weight: 800;
-}
-
-.bubble {
-  padding: 14px 16px;
-  background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.bubble strong {
-  display: block;
-  margin-bottom: 6px;
-}
-
-.bubble p {
-  margin: 0;
-  line-height: 1.8;
-}
-
-pre {
-  margin: 0;
-  color: inherit;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: inherit;
-  line-height: 1.75;
-}
-
-.typing {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--text-secondary);
-  font-weight: 700;
-}
-
-.typing span {
-  width: 7px;
-  height: 7px;
-  background: var(--medical-blue);
-  border-radius: 999px;
-  animation: pulse 1s ease-in-out infinite;
-}
-
-.typing span:nth-child(2) {
-  animation-delay: 0.15s;
-}
-
-.typing span:nth-child(3) {
-  animation-delay: 0.3s;
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 0.3;
-    transform: translateY(0);
-  }
-
-  50% {
-    opacity: 1;
-    transform: translateY(-3px);
-  }
-}
-
-.inline-warning,
-.error-box {
-  margin-top: 14px;
-  padding: 14px;
-  color: #991b1b;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
-}
-
-.inline-warning strong,
-.error-box strong {
-  margin-bottom: 4px;
-}
-
-.tag-list,
-.tool-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.tag-list span {
-  padding: 4px 9px;
-  color: #ffffff;
-  background: #dc2626;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.followup-list {
-  display: grid;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.followup-list button {
-  padding: 10px 12px;
-  color: #1d4ed8;
-  text-align: left;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.reliability-note {
-  display: grid;
-  gap: 4px;
-  margin-top: 12px;
-  padding: 9px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.reliability-note strong {
-  font-size: 14px;
-}
-
-.reliability-note p {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.reliability-high {
-  background: #ecfdf5;
-  border-color: #99f6e4;
-}
-
-.reliability-high strong {
-  color: #0f766e;
-}
-
-.reliability-medium {
-  background: #eff6ff;
-  border-color: #bfdbfe;
-}
-
-.reliability-medium strong {
-  color: #1d4ed8;
-}
-
-.reliability-low,
-.reliability-insufficient,
-.reliability-unknown {
-  background: #fff7ed;
-  border-color: #fed7aa;
-}
-
-.reliability-low strong,
-.reliability-insufficient strong,
-.reliability-unknown strong {
-  color: #c2410c;
-}
-
-.source-list {
-  margin-top: 12px;
-}
-
-.message-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.message-actions button {
-  min-height: 34px;
-  padding: 0 12px;
-  color: #0f766e;
-  background: #ecfdf5;
-  border: 1px solid #99f6e4;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 800;
-}
-
-.llm-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.llm-on {
-  color: #166534;
-  background: #f0fdf4;
-  border-color: #bbf7d0;
-}
-
-.llm-off {
-  color: #92400e;
-  background: #fffbeb;
-  border-color: #fde68a;
-}
-
-.feedback-panel {
-  display: grid;
-  gap: 8px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-
-.feedback-panel > span {
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.feedback-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.feedback-actions button {
-  min-height: 32px;
-  padding: 0 10px;
-  color: var(--text-secondary);
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.feedback-actions button:hover:not(:disabled),
-.feedback-actions button.active {
-  color: #1d4ed8;
-  background: #eff6ff;
-  border-color: #93c5fd;
-}
-
-.feedback-actions button:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-.source-list summary {
-  color: #1d4ed8;
-  cursor: pointer;
-  font-weight: 800;
-}
-
-.source-card {
-  display: grid;
-  gap: 5px;
-  margin-top: 10px;
-  padding: 12px;
-  color: var(--text-secondary);
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.source-card span {
-  width: fit-content;
-  padding: 2px 8px;
-  color: #ffffff;
-  background: var(--pharmacy-teal);
-  border-radius: 999px;
-  font-size: 12px;
-}
-
-.agent-panel {
-  display: grid;
-  gap: 10px;
-  margin-top: 12px;
-  padding: 0;
-  color: var(--text-secondary);
-  background: #f8fafc;
-  border: 1px dashed #94a3b8;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.agent-panel summary,
-.agent-metrics {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.agent-panel summary {
-  min-height: 42px;
-  padding: 0 12px;
-  color: var(--text-primary);
-  cursor: pointer;
-  list-style: none;
-  font-weight: 900;
-}
-
-.agent-panel summary::-webkit-details-marker {
-  display: none;
-}
-
-.agent-panel summary::after {
-  content: '展开';
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.agent-panel[open] summary::after {
-  content: '收起';
-}
-
-.agent-panel summary b,
-.tool-list span,
-.error-box span {
-  padding: 4px 9px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 800;
-  color: #0f766e;
-  background: #ccfbf1;
-}
-
-.agent-decision {
-  margin: 0 12px;
-  padding: 10px 12px;
-  color: #155e75;
-  background: #ecfeff;
-  border: 1px solid #a5f3fc;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 1.6;
-}
-
-.agent-metrics div {
-  display: grid;
-  gap: 2px;
-  min-width: 120px;
-}
-
-.agent-metrics,
-.reliability-breakdown,
-.agent-panel > p,
-.tool-list {
-  margin-right: 12px;
-  margin-left: 12px;
-}
-
-.agent-panel > .tool-list {
-  margin-bottom: 12px;
-}
-
-.agent-metrics small {
-  color: var(--text-muted);
-}
-
-.reliability-breakdown {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.reliability-breakdown div {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 34px;
-  padding: 6px 8px;
-  background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.reliability-breakdown span {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.reliability-breakdown b {
-  color: var(--text-primary);
-  font-size: 13px;
-}
-
-.reliability-method {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.tool-list span {
-  color: #4338ca;
-  background: #eef2ff;
-}
-
-.error-box span {
-  display: inline-block;
-  margin-top: 8px;
-  color: #7f1d1d;
-  background: #fee2e2;
-}
-
-.composer {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  background: #ffffff;
-  border-top: 1px solid var(--border);
-}
-
-.composer-status {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-}
-
-.attachment-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: min(100%, 520px);
-  min-height: 42px;
-  padding: 5px 8px;
-  color: var(--text-secondary);
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: 13px;
-}
-
-.attachment-pill img {
-  width: 32px;
-  height: 32px;
-  object-fit: cover;
-  border-radius: 999px;
-}
-
-.attachment-pill span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.attachment-pill b {
-  flex: 0 0 auto;
-  color: #1d4ed8;
-  font-size: 12px;
-}
-
-.attachment-pill button {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  color: var(--text-muted);
-  background: transparent;
-  border: 0;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.attachment-pill button:hover {
-  color: #991b1b;
-  background: #fee2e2;
-}
-
-.subtle-status {
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.chat-composer-bar {
-  display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) 46px 46px;
-  gap: 8px;
-  align-items: end;
-  padding: 8px;
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
-}
-
-textarea,
-input {
-  width: 100%;
-  padding: 13px 14px;
-  color: var(--text-primary);
-  background: #ffffff;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  outline: none;
-}
-
-textarea:focus,
-input:focus {
-  border-color: var(--medical-blue);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-}
-
-textarea {
-  min-height: 46px;
-  max-height: 150px;
-  padding: 12px 4px;
-  resize: none;
-  overflow-y: auto;
-  background: transparent;
-  border: 0;
-  border-radius: 8px;
-}
-
-textarea:focus {
-  box-shadow: none;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  border: 0;
-  clip: rect(0 0 0 0);
-}
-
-.icon-btn {
-  display: grid;
-  width: 46px;
-  height: 46px;
-  place-items: center;
-  color: var(--text-secondary);
-  background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-  transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    color 0.2s ease,
-    transform 0.2s ease;
-}
-
-.voice-btn {
-  color: #0f766e;
-  background: #ecfdf5;
-  border: 1px solid #99f6e4;
-}
-
-.voice-btn.active {
-  color: #ffffff;
-  background: #dc2626;
-  border-color: #dc2626;
-}
-
-.voice-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.icon-btn:hover:not(:disabled) {
-  color: #1d4ed8;
-  background: #eff6ff;
-  border-color: #93c5fd;
-  transform: translateY(-1px);
-}
-
-.send-btn {
-  color: #ffffff;
-  background: var(--medical-blue);
-  border-color: var(--medical-blue);
-}
-
-.send-btn:hover:not(:disabled) {
-  color: #ffffff;
-  background: var(--medical-blue);
-  border-color: var(--medical-blue);
-}
-
-.send-btn svg {
-  transform: translateX(1px);
-}
-
-.send-btn:disabled,
-.icon-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.send-btn svg {
-  animation: none;
-}
-
-.send-btn:disabled svg {
-  animation: spin 1s linear infinite;
-}
-
-.clear-chat-btn {
-  display: inline-flex;
-  width: fit-content;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-muted);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.clear-chat-btn:hover:not(:disabled) {
-  color: #991b1b;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .safety-note {
   padding: 9px 14px;
   color: #9a3412;
@@ -1980,6 +1104,8 @@ textarea:focus {
 @media (max-width: 900px) {
   .chat-shell {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
   }
 
   .chat-main {
@@ -1987,33 +1113,142 @@ textarea:focus {
   }
 }
 
+@media (max-width: 760px) {
+  .chat-page {
+    min-height: 100dvh;
+    margin: -18px -16px -56px;
+  }
+
+  .chat-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    height: calc(100dvh - 8px);
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .chat-side {
+    position: relative;
+    z-index: 5;
+    flex: 0 0 auto;
+    gap: 8px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.96);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .assistant-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 10px;
+    align-items: center;
+    padding: 12px;
+    box-shadow: none;
+  }
+
+  .assistant-badge {
+    grid-column: 1 / -1;
+    width: fit-content;
+    margin-bottom: 0;
+  }
+
+  .assistant-card h2 {
+    margin-bottom: 0;
+    font-size: 15px;
+  }
+
+  .assistant-card p {
+    display: none;
+  }
+
+  .new-session-btn {
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
+  .side-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 34px;
+    color: var(--text-secondary);
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 800;
+  }
+
+  .side-toggle svg {
+    transition: transform 0.2s ease;
+  }
+
+  .side-toggle svg.open {
+    transform: rotate(180deg);
+  }
+
+  .side-content {
+    display: none;
+    max-height: 38dvh;
+    overflow: auto;
+  }
+
+  .side-content.open {
+    display: grid;
+  }
+
+  .session-panel,
+  .quick-panel,
+  .admin-tip {
+    box-shadow: none;
+  }
+
+  .session-list {
+    max-height: 160px;
+  }
+
+  .chat-main {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .conversation {
+    order: 1;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 12px;
+  }
+
+  .safety-note {
+    order: 2;
+    padding: 8px 12px;
+    border-top: 1px solid #fed7aa;
+    font-size: 12px;
+  }
+
+  :deep(.composer) {
+    position: sticky;
+    bottom: 0;
+    z-index: 6;
+    order: 3;
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+    box-shadow: 0 -12px 28px rgba(15, 23, 42, 0.08);
+  }
+}
+
 @media (max-width: 640px) {
   .conversation {
-    padding: 16px;
-  }
-
-  .message,
-  .user-message {
-    grid-template-columns: 36px minmax(0, 1fr);
-  }
-
-  .user-message {
-    grid-template-columns: minmax(0, 1fr) 36px;
-  }
-
-  .avatar {
-    width: 36px;
-    height: 36px;
-  }
-
-  .chat-composer-bar {
-    grid-template-columns: 42px minmax(0, 1fr) 42px 42px;
-    padding: 8px;
-  }
-
-  .icon-btn {
-    width: 42px;
-    height: 42px;
+    padding: 12px;
   }
 }
 </style>

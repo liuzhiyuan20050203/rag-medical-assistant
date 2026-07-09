@@ -1,6 +1,6 @@
 <template>
   <div class="medicine-page">
-    <section class="medicine-hero" aria-labelledby="medicine-title">
+    <section class="medicine-hero ui-card" aria-labelledby="medicine-title">
       <div>
         <p class="eyebrow">SMART PHARMACY</p>
         <h2 id="medicine-title">用药查询</h2>
@@ -14,11 +14,12 @@
           <div class="search-row">
             <input
               id="medicine-keyword"
+              class="ui-field"
               v-model="keyword"
               placeholder="例如：布洛芬、解热、抗过敏"
             />
 
-            <button type="submit" :disabled="loading">
+            <button class="ui-button ui-button--primary" type="submit" :disabled="loading">
               {{ loading ? '查询中...' : '查询' }}
             </button>
           </div>
@@ -28,6 +29,7 @@
           <button
             v-for="item in quickKeywords"
             :key="item"
+            class="quick-tag ui-button ui-button--soft"
             type="button"
             @click="quickSearch(item)"
           >
@@ -59,14 +61,14 @@
     </section>
 
     <section class="safety-panel" aria-label="用药安全核对">
-      <article v-for="item in safetyChecklist" :key="item.title">
+      <article v-for="item in safetyChecklist" :key="item.title" class="ui-card">
         <span>{{ item.code }}</span>
         <strong>{{ item.title }}</strong>
         <p>{{ item.text }}</p>
       </article>
     </section>
 
-    <div v-if="message" class="message">
+    <div v-if="message" class="message ui-alert ui-alert--info">
       {{ message }}
     </div>
 
@@ -74,30 +76,30 @@
       <article
         v-for="(item, index) in medicines"
         :key="index"
-        class="medicine-card"
+        class="medicine-card ui-card"
       >
         <div class="medicine-card-header">
           <div>
             <span class="medicine-label">药品</span>
             <h3>{{ item.name }}</h3>
           </div>
-          <strong>{{ item.type }}</strong>
+          <strong class="ui-badge ui-badge--info">{{ item.type }}</strong>
         </div>
 
         <div class="field-grid">
-          <p>
+          <p class="field-item ui-section">
             <strong>适用情况</strong>
             <span>{{ item.usage }}</span>
           </p>
-          <p>
+          <p class="field-item ui-section">
             <strong>注意事项</strong>
             <span>{{ item.notice }}</span>
           </p>
-          <p>
+          <p class="field-item ui-section">
             <strong>禁忌人群</strong>
             <span>{{ item.contraindication }}</span>
           </p>
-          <p>
+          <p class="field-item ui-section">
             <strong>不良反应</strong>
             <span>{{ item.side_effect }}</span>
           </p>
@@ -105,14 +107,14 @@
       </article>
     </section>
 
-    <section v-else class="empty-state">
+    <section v-else class="empty-state ui-empty">
       <div>
         <strong>药品信息待查询</strong>
         <p>可以从上方快捷标签开始，也可以输入药品名称、药品类别或症状相关关键词。</p>
       </div>
     </section>
 
-    <section class="notice">
+    <section class="notice ui-alert ui-alert--warning">
       <strong>提示：</strong>
       用药应严格按照药品说明书或医生、药师指导进行。儿童、孕妇、老人、慢性病患者应谨慎用药。
     </section>
@@ -201,9 +203,9 @@ const searchMedicine = async () => {
   padding: clamp(24px, 4vw, 42px);
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(239, 246, 255, 0.86)),
-    #ffffff;
+    var(--surface);
   border: 1px solid rgba(37, 99, 235, 0.12);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .eyebrow {
@@ -245,43 +247,20 @@ const searchMedicine = async () => {
   display: flex;
   gap: 12px;
   padding: 10px;
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   box-shadow: var(--shadow-sm);
 }
 
-input {
+.search-row .ui-field {
   flex: 1;
   min-width: 0;
-  padding: 12px 14px;
-  color: var(--text-primary);
-  background: #f8fbfd;
-  border: 1px solid transparent;
-  border-radius: 8px;
   font-size: 16px;
-  outline: none;
 }
 
-input:focus {
-  border-color: var(--medical-blue);
-  background: #ffffff;
-}
-
-button {
-  min-height: 44px;
-  padding: 0 20px;
-  color: #ffffff;
-  background: var(--medical-blue);
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 15px;
-  font-weight: 800;
-}
-
-button:disabled {
-  background: #94a3b8;
-  cursor: not-allowed;
+.search-row .ui-button {
+  min-height: var(--control-height-lg);
 }
 
 .quick-tags {
@@ -291,12 +270,9 @@ button:disabled {
   margin-top: 14px;
 }
 
-.quick-tags button {
+.quick-tag {
   min-height: 36px;
   padding: 0 12px;
-  color: var(--pharmacy-teal);
-  background: #ecfeff;
-  border: 1px solid #a5f3fc;
   font-size: 13px;
 }
 
@@ -307,9 +283,9 @@ button:disabled {
 .shelf {
   height: 270px;
   padding: 18px;
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid #cfe3ee;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);
 }
 
@@ -318,9 +294,9 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px;
-  color: #ffffff;
+  color: var(--surface);
   background: linear-gradient(135deg, var(--pharmacy-teal), var(--clinical-green));
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .shelf-header span,
@@ -334,8 +310,8 @@ button:disabled {
   height: 38px;
   place-items: center;
   color: var(--pharmacy-teal);
-  background: #ffffff;
-  border-radius: 8px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
 }
 
 .bottle-row {
@@ -370,11 +346,11 @@ button:disabled {
 
 .bottle-row i:nth-child(2)::before,
 .bottle-row i:nth-child(4)::before {
-  background: #2563eb;
+  background: var(--medical-blue);
 }
 
 .bottle-row i:nth-child(3)::before {
-  background: #d97706;
+  background: var(--medicine-amber);
 }
 
 .pill-strip {
@@ -386,21 +362,21 @@ button:disabled {
 .pill-strip span {
   width: 54px;
   height: 22px;
-  background: linear-gradient(90deg, #38bdf8 50%, #ffffff 50%);
+  background: linear-gradient(90deg, #38bdf8 50%, var(--surface) 50%);
   border: 1px solid #c7dce8;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .pill-strip span:nth-child(2) {
-  background: linear-gradient(90deg, #22c55e 50%, #ffffff 50%);
+  background: linear-gradient(90deg, #22c55e 50%, var(--surface) 50%);
 }
 
 .pill-strip span:nth-child(3) {
-  background: linear-gradient(90deg, #f59e0b 50%, #ffffff 50%);
+  background: linear-gradient(90deg, #f59e0b 50%, var(--surface) 50%);
 }
 
 .pill-strip span:nth-child(4) {
-  background: linear-gradient(90deg, #f43f5e 50%, #ffffff 50%);
+  background: linear-gradient(90deg, #f43f5e 50%, var(--surface) 50%);
 }
 
 .safety-panel {
@@ -411,10 +387,6 @@ button:disabled {
 
 .safety-panel article {
   padding: 20px;
-  background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
 }
 
 .safety-panel span {
@@ -422,9 +394,9 @@ button:disabled {
   width: 34px;
   height: 34px;
   place-items: center;
-  color: #ffffff;
+  color: var(--surface);
   background: var(--medicine-amber);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-weight: 900;
 }
 
@@ -443,7 +415,6 @@ button:disabled {
 }
 
 .message {
-  color: var(--medical-blue);
   font-weight: 800;
 }
 
@@ -455,10 +426,6 @@ button:disabled {
 
 .medicine-card {
   padding: 22px;
-  background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
 }
 
 .medicine-card-header {
@@ -487,11 +454,6 @@ button:disabled {
 
 .medicine-card-header > strong {
   flex: 0 0 auto;
-  padding: 6px 10px;
-  color: var(--pharmacy-teal);
-  background: #ecfeff;
-  border: 1px solid #a5f3fc;
-  border-radius: 8px;
   font-size: 13px;
   font-weight: 900;
 }
@@ -501,11 +463,8 @@ button:disabled {
   gap: 12px;
 }
 
-.field-grid p {
+.field-item {
   padding: 14px;
-  background: #f8fbfd;
-  border: 1px solid #e4edf3;
-  border-radius: 8px;
 }
 
 .field-grid strong {
@@ -522,11 +481,7 @@ button:disabled {
 }
 
 .empty-state {
-  padding: 24px;
-  color: var(--text-secondary);
-  background: #ffffff;
-  border: 1px dashed var(--border-strong);
-  border-radius: 8px;
+  border-style: dashed;
 }
 
 .empty-state strong {
@@ -538,15 +493,6 @@ button:disabled {
 
 .empty-state p {
   margin-top: 6px;
-}
-
-.notice {
-  padding: 18px 22px;
-  color: #92400e;
-  background: #fff7ed;
-  border: 1px solid #fed7aa;
-  border-radius: 8px;
-  line-height: 1.8;
 }
 
 .notice strong {
@@ -574,7 +520,7 @@ button:disabled {
     flex-direction: column;
   }
 
-  .search-row button {
+  .search-row .ui-button {
     width: 100%;
   }
 
