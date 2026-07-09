@@ -1,18 +1,19 @@
 <template>
   <div class="page">
-    <div class="page-title">
+    <div class="page-title ui-page-heading">
       <h2>系统知识库</h2>
       <p>
         本页面展示系统当前内置的常见病知识库、药品知识库和危险症状规则库。
         AI 医疗助手会基于这些知识内容进行检索和回答。
       </p>
-      <button type="button" class="refresh-btn" @click="loadKnowledge(true)" :disabled="loading">
+      <button type="button" class="refresh-btn ui-button ui-button--soft" @click="loadKnowledge(true)" :disabled="loading">
         {{ loading ? '刷新中...' : '刷新数据' }}
       </button>
     </div>
 
-    <div class="tabs">
+    <div class="tabs ui-tabs">
       <button
+        class="ui-tab"
         :class="{ active: activeTab === 'disease' }"
         @click="activeTab = 'disease'"
       >
@@ -20,6 +21,7 @@
       </button>
 
       <button
+        class="ui-tab"
         :class="{ active: activeTab === 'medicine' }"
         @click="activeTab = 'medicine'"
       >
@@ -27,6 +29,7 @@
       </button>
 
       <button
+        class="ui-tab"
         :class="{ active: activeTab === 'warning' }"
         @click="activeTab = 'warning'"
       >
@@ -34,7 +37,7 @@
       </button>
     </div>
 
-    <div v-if="loading" class="loading">
+    <div v-if="loading" class="loading ui-empty">
       数据加载中...
     </div>
 
@@ -48,11 +51,11 @@
         <div
           v-for="(item, index) in diseases"
           :key="index"
-          class="knowledge-card"
+          class="knowledge-card ui-card"
         >
           <div class="card-title">
             <h4>{{ item.name }}</h4>
-            <span>{{ item.category }}</span>
+            <span class="ui-badge ui-badge--info">{{ item.category }}</span>
           </div>
 
           <p><strong>常见症状：</strong>{{ item.symptoms.join('、') }}</p>
@@ -74,11 +77,11 @@
         <div
           v-for="(item, index) in medicines"
           :key="index"
-          class="knowledge-card"
+          class="knowledge-card ui-card"
         >
           <div class="card-title">
             <h4>{{ item.name }}</h4>
-            <span>{{ item.type }}</span>
+            <span class="ui-badge ui-badge--info">{{ item.type }}</span>
           </div>
 
           <p><strong>适用情况：</strong>{{ item.usage }}</p>
@@ -99,13 +102,13 @@
         <div
           v-for="(item, index) in warningRules"
           :key="index"
-          class="warning-item"
+          class="warning-item ui-badge ui-badge--danger"
         >
           {{ item }}
         </div>
       </div>
 
-      <div class="notice">
+      <div class="notice ui-alert ui-alert--warning">
         当用户输入内容中包含以上危险症状关键词时，系统会优先返回就医提醒，
         不再进行普通健康咨询回答。
       </div>
@@ -159,60 +162,12 @@ onMounted(() => {
   margin-top: 14px;
   min-height: 38px;
   padding: 0 14px;
-  color: #1d4ed8;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 800;
+  width: fit-content;
 }
 
 .refresh-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-.page-title h2 {
-  font-size: 30px;
-  margin-bottom: 10px;
-  color: #111827;
-}
-
-.page-title p {
-  color: #6b7280;
-  line-height: 1.8;
-}
-
-.tabs {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 24px;
-  flex-wrap: wrap;
-}
-
-.tabs button {
-  padding: 11px 20px;
-  border: 1px solid #d1d5db;
-  background: white;
-  color: #374151;
-  border-radius: 999px;
-  cursor: pointer;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.tabs button.active {
-  background: #2563eb;
-  color: white;
-  border-color: #2563eb;
-}
-
-.loading {
-  background: white;
-  padding: 26px;
-  border-radius: 16px;
-  color: #6b7280;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 
 .content-section {
@@ -228,11 +183,11 @@ onMounted(() => {
 
 .section-header h3 {
   font-size: 22px;
-  color: #111827;
+  color: var(--text-primary);
 }
 
 .section-header span {
-  color: #2563eb;
+  color: var(--medical-blue);
   font-weight: 700;
 }
 
@@ -243,10 +198,7 @@ onMounted(() => {
 }
 
 .knowledge-card {
-  background: white;
   padding: 24px;
-  border-radius: 16px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 
 .card-title {
@@ -257,21 +209,12 @@ onMounted(() => {
 }
 
 .card-title h4 {
-  color: #111827;
+  color: var(--text-primary);
   font-size: 20px;
 }
 
-.card-title span {
-  background: #eff6ff;
-  color: #2563eb;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
 .knowledge-card p {
-  color: #374151;
+  color: var(--text-secondary);
   line-height: 1.8;
   margin-bottom: 8px;
 }
@@ -282,22 +225,7 @@ onMounted(() => {
   gap: 12px;
 }
 
-.warning-item {
-  background: #fef2f2;
-  color: #991b1b;
-  border: 1px solid #fecaca;
-  padding: 10px 16px;
-  border-radius: 999px;
-  font-weight: 600;
-}
-
 .notice {
   margin-top: 24px;
-  background: #fff7ed;
-  color: #9a3412;
-  padding: 18px 22px;
-  border-radius: 12px;
-  border: 1px solid #fed7aa;
-  line-height: 1.8;
 }
 </style>
