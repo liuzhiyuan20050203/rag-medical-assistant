@@ -34,9 +34,28 @@ const router = createRouter({
       component: () => import('../views/HistoryView.vue'),
     },
     {
+      path: '/profile',
+      name: 'profile',
+      component: () => import('../views/ProfileView.vue'),
+      meta: {
+        requiresAuth: true,
+      },
+    },
+    {
       path: '/login',
       name: 'login',
       component: () => import('../views/LoginView.vue'),
+      props: {
+        initialMode: 'login',
+      },
+    },
+    {
+      path: '/register',
+      name: 'register',
+      component: () => import('../views/LoginView.vue'),
+      props: {
+        initialMode: 'register',
+      },
     },
     {
       path: '/admin',
@@ -49,6 +68,25 @@ const router = createRouter({
       component: () => import('../views/AnalyticsView.vue'),
     },
   ],
+})
+
+router.beforeEach((to) => {
+  if (!to.meta.requiresAuth) {
+    return true
+  }
+
+  const hasUser = Boolean(localStorage.getItem('ragUser') && localStorage.getItem('ragToken'))
+
+  if (hasUser) {
+    return true
+  }
+
+  return {
+    path: '/login',
+    query: {
+      redirect: to.fullPath,
+    },
+  }
 })
 
 export default router

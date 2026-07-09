@@ -4,6 +4,7 @@ import { apiUrl } from '../api'
 export const useChatSession = ({ scrollToBottom } = {}) => {
   const messages = ref([])
   const currentUser = ref(null)
+  const guestMode = ref(false)
   const activeSessionId = ref(null)
   const conversationSessions = ref([])
   const sessionsLoading = ref(false)
@@ -12,6 +13,7 @@ export const useChatSession = ({ scrollToBottom } = {}) => {
   const restoreStatus = ref('')
 
   const isAdmin = computed(() => currentUser.value?.role === 'admin')
+  const isGuest = computed(() => !currentUser.value && guestMode.value)
 
   const chatCacheKey = computed(() => {
     const userKey = currentUser.value?.id || currentUser.value?.username || 'guest'
@@ -21,15 +23,18 @@ export const useChatSession = ({ scrollToBottom } = {}) => {
   const authHeaders = (extra = {}) => {
     const token = localStorage.getItem('ragToken') || ''
 
-    return {
-      ...extra,
-      Authorization: `Bearer ${token}`,
-    }
+    return token
+      ? {
+          ...extra,
+          Authorization: `Bearer ${token}`,
+        }
+      : { ...extra }
   }
 
   const loadCurrentUser = () => {
     const raw = localStorage.getItem('ragUser')
     currentUser.value = raw ? JSON.parse(raw) : null
+    guestMode.value = !currentUser.value && localStorage.getItem('ragGuest') === 'true'
   }
 
   const saveChatCache = () => {
@@ -55,7 +60,9 @@ export const useChatSession = ({ scrollToBottom } = {}) => {
   const loadConversationSessions = async () => {
     if (!currentUser.value) {
       conversationSessions.value = []
-      sessionsStatus.value = '登录后会自动保存并显示历史会话。'
+      sessionsStatus.value = guestMode.value
+        ? '游客模式可直接咨询，但不会保存到个人账号。'
+        : '登录后会自动保存并显示历史会话。'
       return []
     }
 
@@ -167,12 +174,14 @@ export const useChatSession = ({ scrollToBottom } = {}) => {
   return {
     messages,
     currentUser,
+    guestMode,
     activeSessionId,
     conversationSessions,
     sessionsLoading,
     sessionsStatus,
     restoreStatus,
     isAdmin,
+    isGuest,
     authHeaders,
     loadCurrentUser,
     saveChatCache,

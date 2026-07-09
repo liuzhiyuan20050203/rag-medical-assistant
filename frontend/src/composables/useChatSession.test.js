@@ -114,6 +114,19 @@ describe('useChatSession', () => {
     expect(session.sessionsStatus.value).toBe('登录后会自动保存并显示历史会话。')
   })
 
+  it('keeps visitor mode local and skips personal session loading', async () => {
+    localStorage.setItem('ragGuest', 'true')
+
+    const session = useChatSession()
+    session.loadCurrentUser()
+    await expect(session.loadConversationSessions()).resolves.toEqual([])
+
+    expect(session.isGuest.value).toBe(true)
+    expect(fetch).not.toHaveBeenCalled()
+    expect(session.conversationSessions.value).toEqual([])
+    expect(session.sessionsStatus.value).toBe('游客模式可直接咨询，但不会保存到个人账号。')
+  })
+
   it('restores a server conversation and maps stored messages for ChatMessage', async () => {
     localStorage.setItem('ragUser', JSON.stringify({ id: 10, username: 'patient' }))
     const scrollToBottom = vi.fn().mockResolvedValue(undefined)

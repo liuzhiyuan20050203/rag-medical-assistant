@@ -34,8 +34,10 @@ from auth_service import (
     create_session,
     create_user,
     delete_user,
+    change_current_password,
     list_public_users,
     register_user,
+    update_current_profile,
     update_user,
     user_from_token
 )
@@ -230,6 +232,68 @@ def auth_register(data: dict):
         "success": user is not None,
         "message": message,
         "user": user
+    }
+
+
+@app.get("/api/auth/me")
+def auth_me(user: dict = Depends(optional_user)):
+    """
+    获取当前登录用户资料。
+    """
+    if not user:
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "请先登录后查看个人资料", "user": None}
+        )
+
+    return {
+        "success": True,
+        "message": "获取成功",
+        "user": user
+    }
+
+
+@app.put("/api/auth/profile")
+def auth_update_profile(data: dict, user: dict = Depends(optional_user)):
+    """
+    当前用户修改个人资料、头像和用户名。
+    """
+    if not user:
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "请先登录后修改个人资料", "user": None}
+        )
+
+    updated_user, message = update_current_profile(user.get("username", ""), data or {})
+
+    return {
+        "success": updated_user is not None,
+        "message": message,
+        "user": updated_user
+    }
+
+
+@app.put("/api/auth/password")
+def auth_update_password(data: dict, user: dict = Depends(optional_user)):
+    """
+    当前用户修改密码。
+    """
+    if not user:
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "请先登录后修改密码", "user": None}
+        )
+
+    updated_user, message = change_current_password(
+        user.get("username", ""),
+        data.get("old_password", ""),
+        data.get("new_password", "")
+    )
+
+    return {
+        "success": updated_user is not None,
+        "message": message,
+        "user": updated_user
     }
 
 
