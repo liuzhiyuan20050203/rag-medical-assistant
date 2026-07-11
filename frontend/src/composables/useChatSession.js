@@ -1,6 +1,8 @@
 import { computed, ref } from 'vue'
 import { apiUrl } from '../api'
 
+const CHAT_CACHE_VERSION = 3
+
 export const useChatSession = ({ scrollToBottom } = {}) => {
   const messages = ref([])
   const currentUser = ref(null)
@@ -34,8 +36,9 @@ export const useChatSession = ({ scrollToBottom } = {}) => {
 
   const saveChatCache = () => {
     const cache = {
+      version: CHAT_CACHE_VERSION,
       activeSessionId: activeSessionId.value,
-      messages: messages.value.filter((message) => message.type !== 'loading'),
+      messages: messages.value,
       savedAt: Date.now(),
     }
     sessionStorage.setItem(chatCacheKey.value, JSON.stringify(cache))
@@ -87,14 +90,42 @@ export const useChatSession = ({ scrollToBottom } = {}) => {
     }
   }
 
-  const restoreChatCache = async () => {
+  const normalizeCachedMessages = (cachedMessages, options = {}) => {
+    const { markInterruptedLoading = false } = options
+    if (!Array.isArray(cachedMessages)) return []
+
+    return cachedMessages.map((message) => {
+      if (message?.type !== 'loading') return message
+      if (!markInterruptedLoading) return message
+
+      return {
+        id: `assistant-interrupted-${Date.now()}`,
+        role: 'assistant',
+        content: '上次分析可能因页面刷新中断，请重新发送这条问题，或到历史记录中查看是否已经保存结果。',
+        error: {
+          type: 'InterruptedRequest',
+          message: '页面刷新后，浏览器无法继续接收上一次进行中的回答。',
+        },
+      }
+    })
+  }
+
+  const restoreChatCache = async (options = {}) => {
+    const { markInterruptedLoading = false } = options
     const raw = sessionStorage.getItem(chatCacheKey.value)
     if (!raw) return false
 
     try {
       const cache = JSON.parse(raw)
+      if (cache.version !== CHAT_CACHE_VERSION) {
+        clearChatCache()
+        return false
+      }
       activeSessionId.value = cache.activeSessionId || null
-      messages.value = Array.isArray(cache.messages) ? cache.messages : []
+      messages.value = normalizeCachedMessages(cache.messages, { markInterruptedLoading })
+      if (markInterruptedLoading) {
+        saveChatCache()
+      }
       await scrollToBottom?.()
       return messages.value.length > 0
     } catch (error) {

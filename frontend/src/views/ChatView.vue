@@ -4,9 +4,9 @@
       <aside class="chat-side">
         <div class="assistant-card">
           <span class="assistant-badge">AI 医疗 Agent</span>
-          <h2>把症状、药品和图片都发到这里</h2>
+          <h2>今天想咨询什么？</h2>
           <p>
-            系统会统一处理文字、语音和图片线索，优先识别危险信号，再检索知识库生成参考建议。
+            可以描述症状、询问药品，或上传图片/视频。系统会先检查危险信号，再给出参考建议。
           </p>
           <button type="button" class="new-session-btn" :disabled="loading" @click="startNewConversation">
             <Plus :size="17" aria-hidden="true" />
@@ -16,7 +16,7 @@
 
         <button type="button" class="side-toggle" @click="sidePanelOpen = !sidePanelOpen">
           <ChevronDown :class="{ open: sidePanelOpen }" :size="16" aria-hidden="true" />
-          历史会话与咨询提示
+          历史与提示
         </button>
 
         <div :class="['side-content', { open: sidePanelOpen }]">
@@ -58,7 +58,7 @@
           <div class="quick-panel">
             <div class="section-title">
               <strong>咨询提示</strong>
-              <span>描述越清楚越好</span>
+              <span>按需补充</span>
             </div>
             <article
               v-for="item in consultationTips"
@@ -99,11 +99,17 @@
           />
         </div>
 
+        <section class="safety-note">
+          <strong>安全提示：</strong>
+          仅供健康参考；胸痛、呼吸困难、高热不退、意识模糊等情况请及时就医。
+        </section>
+
         <ChatComposer
           ref="composerRef"
           v-model="question"
           :attachment-visible="attachmentVisible"
           :image-preview="imagePreview"
+          :attachment-kind="attachmentKind"
           :attachment-label="attachmentLabel"
           :image-loading="imageLoading"
           :speech-status-text="speechStatusText"
@@ -115,14 +121,18 @@
           @submit="submitQuestion"
           @toggle-voice="toggleVoiceInput"
           @image-file="handleImageFile"
+          @video-file="handleVideoFile"
           @clear-attachment="clearAttachment"
-          @clear-conversation="startNewConversation"
         />
-
-        <section class="safety-note">
-          <strong>安全提示：</strong>
-          本系统仅提供健康信息参考，不能替代医生诊断或药师指导。若出现胸痛、呼吸困难、高热不退、意识模糊等情况，请及时就医。
-        </section>
+        <video
+          ref="videoRef"
+          class="media-probe"
+          :src="videoPreviewUrl"
+          muted
+          playsinline
+          @loadedmetadata="syncVideoDuration"
+        ></video>
+        <canvas ref="videoCanvasRef" class="media-probe" aria-hidden="true"></canvas>
       </main>
     </section>
   </div>
@@ -143,20 +153,16 @@ const router = useRouter()
 
 const consultationTips = [
   {
-    label: '症状描述',
-    hint: '说清楚部位、持续时间、是否加重。',
+    label: '说症状',
+    hint: '部位、多久了、有没有加重。',
   },
   {
-    label: '危险信号',
-    hint: '胸痛、呼吸困难、高热不退要优先说明。',
+    label: '问药品',
+    hint: '药名、禁忌、剂量、注意事项。',
   },
   {
-    label: '用药核对',
-    hint: '可以直接问药品禁忌、剂量和注意事项。',
-  },
-  {
-    label: '图片辅助',
-    hint: '药盒、症状照片、检查单可作为参考线索。',
+    label: '传图片/视频',
+    hint: '药盒、症状照片、检查单都可以。',
   },
 ]
 
@@ -171,8 +177,8 @@ const feedbackOptions = [
 const welcomeMessage = {
   id: 'welcome',
   role: 'assistant',
-  title: '你好，我是 AI 医疗 Agent，可以帮你梳理症状和用药问题。',
-  content: '你可以直接描述症状、询问药品禁忌，或上传药盒、症状照片、检查单图片。',
+  title: '你好，我可以帮你梳理症状、用药和图片/视频线索。',
+  content: '请直接说出哪里不舒服、持续多久，或者上传药盒、检查单、症状照片/视频。',
 }
 
 const inputType = ref('text')
@@ -182,6 +188,12 @@ const imageTagsText = ref('')
 const imagePreview = ref('')
 const imageFileName = ref('')
 const imageFileRef = ref(null)
+const attachmentKind = ref('image')
+const videoFileRef = ref(null)
+const videoPreviewUrl = ref('')
+const videoDuration = ref(0)
+const videoRef = ref(null)
+const videoCanvasRef = ref(null)
 const imageLoading = ref(false)
 const imageStatus = ref('')
 const loading = ref(false)
@@ -191,6 +203,11 @@ const speechSynthesisSupported = ref(false)
 const speakingMessageId = ref('')
 const sidePanelOpen = ref(false)
 const loadingStageTimers = []
+
+const isPageReload = () => {
+  const navigation = performance.getEntriesByType?.('navigation')?.[0]
+  return navigation?.type === 'reload'
+}
 
 const scrollToBottom = async () => {
   await nextTick()
@@ -235,15 +252,18 @@ const canSubmit = computed(() => {
     question.value.trim()
     || imagePreview.value
     || imageFileRef.value
+    || videoFileRef.value
     || imageSummary.value.trim()
     || imageTagsText.value.trim()
   )
 })
 
-const attachmentVisible = computed(() => Boolean(imagePreview.value || imageFileName.value || imageStatus.value))
+const attachmentVisible = computed(() => Boolean(imagePreview.value || imageFileName.value || imageStatus.value || videoFileRef.value))
 
 const attachmentLabel = computed(() => {
+  if (imageLoading.value && attachmentKind.value === 'video') return imageFileName.value ? `正在识别视频 ${imageFileName.value}` : '正在识别视频'
   if (imageLoading.value) return imageFileName.value ? `正在识别 ${imageFileName.value}` : '正在识别图片'
+  if (attachmentKind.value === 'video' && imageFileName.value) return `已选择视频 ${imageFileName.value}`
   if (imageFileName.value && !imagePreview.value && !imageFileRef.value) return `图片未读取成功，请重新选择 ${imageFileName.value}`
   if (imageStatus.value && !imagePreview.value && !imageFileRef.value) return imageStatus.value
   if (imageSummary.value || imageTagsText.value) return imageFileName.value ? `已添加 ${imageFileName.value}` : '已添加图片'
@@ -251,7 +271,7 @@ const attachmentLabel = computed(() => {
   return '已添加附件'
 })
 
-const mainPlaceholder = computed(() => '发消息或按住说话，可以添加药盒、检查单、症状照片...')
+const mainPlaceholder = computed(() => '请描述症状、药品问题，或上传图片/视频...')
 
 const speechStatusText = computed(() => {
   if (!speechRecognitionSupported.value) return '当前浏览器不支持语音识别，建议使用 Chrome 或 Edge。'
@@ -273,6 +293,7 @@ const invalidateHistoryCaches = () => {
   clearPageCacheByPrefix('admin:')
   clearPageCacheByPrefix('analytics:')
   clearPageCacheByPrefix('home:')
+  clearPageCacheByPrefix('profile:')
 }
 
 const clearLoadingStageTimers = () => {
@@ -366,6 +387,12 @@ const isImageFile = (file) => {
   return type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|heic|heif)$/i.test(name)
 }
 
+const isVideoFile = (file) => {
+  const type = String(file?.type || '').toLowerCase()
+  const name = String(file?.name || '').toLowerCase()
+  return type.startsWith('video/') || /\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(name)
+}
+
 const stopSpeaking = () => {
   if (!speechSynthesisSupported.value) return
   window.speechSynthesis.cancel()
@@ -444,6 +471,7 @@ const handleImageFile = async (file) => {
   }
 
   inputType.value = question.value.trim() ? 'mixed' : 'image'
+  attachmentKind.value = 'image'
   imageFileName.value = file.name
   imageFileRef.value = file
   imageStatus.value = '正在读取图片...'
@@ -459,12 +487,37 @@ const handleImageFile = async (file) => {
   }
 }
 
+const handleVideoFile = async (file) => {
+  if (!file) return
+
+  clearAttachment()
+
+  if (!isVideoFile(file)) {
+    imageStatus.value = '请选择视频文件。'
+    return
+  }
+
+  inputType.value = question.value.trim() ? 'mixed' : 'video'
+  attachmentKind.value = 'video'
+  imageFileName.value = file.name
+  videoFileRef.value = file
+  videoPreviewUrl.value = URL.createObjectURL(file)
+  imageStatus.value = '视频已添加，发送后会抽取关键帧分析。'
+}
+
 const clearAttachment = () => {
   imageSummary.value = ''
   imageTagsText.value = ''
   imagePreview.value = ''
   imageFileName.value = ''
   imageFileRef.value = null
+  videoFileRef.value = null
+  if (videoPreviewUrl.value) {
+    URL.revokeObjectURL(videoPreviewUrl.value)
+  }
+  videoPreviewUrl.value = ''
+  videoDuration.value = 0
+  attachmentKind.value = 'image'
   imageStatus.value = ''
 }
 
@@ -493,12 +546,6 @@ const buildImageSummary = (result) => {
 
   if (Array.isArray(llmAnalysis.quality_warnings) && llmAnalysis.quality_warnings.length) {
     lines.push(`图片质量提示：${llmAnalysis.quality_warnings.slice(0, 2).join('；')}`)
-  }
-
-  if (Array.isArray(llmAnalysis.recommended_questions) && llmAnalysis.recommended_questions.length) {
-    lines.push(`建议补充：${llmAnalysis.recommended_questions.slice(0, 2).join('；')}`)
-  } else if (Array.isArray(answer.follow_up_questions) && answer.follow_up_questions.length) {
-    lines.push(`建议补充：${answer.follow_up_questions.slice(0, 2).join('；')}`)
   }
 
   return lines.filter(Boolean).join('\n')
@@ -554,6 +601,173 @@ const analyzeImageForChat = async (noteText = '') => {
   }
 }
 
+const syncVideoDuration = () => {
+  videoDuration.value = videoRef.value?.duration || 0
+}
+
+const waitForVideoMetadata = () =>
+  new Promise((resolve) => {
+    const video = videoRef.value
+    if (!video || Number.isFinite(video.duration)) {
+      resolve()
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      video.removeEventListener('loadedmetadata', onLoaded)
+      resolve()
+    }, 1500)
+    const onLoaded = () => {
+      window.clearTimeout(timeout)
+      video.removeEventListener('loadedmetadata', onLoaded)
+      syncVideoDuration()
+      resolve()
+    }
+    video.addEventListener('loadedmetadata', onLoaded)
+  })
+
+const seekVideo = (timestamp) =>
+  new Promise((resolve) => {
+    const video = videoRef.value
+    if (!video) {
+      resolve()
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      video.removeEventListener('seeked', onSeeked)
+      resolve()
+    }, 1400)
+    const onSeeked = () => {
+      window.clearTimeout(timeout)
+      video.removeEventListener('seeked', onSeeked)
+      resolve()
+    }
+    video.addEventListener('seeked', onSeeked)
+    video.currentTime = Math.min(Math.max(timestamp, 0), Math.max((video.duration || 0) - 0.1, 0))
+  })
+
+const captureVideoFrame = async (timestamp) => {
+  const video = videoRef.value
+  const canvas = videoCanvasRef.value
+  if (!video || !canvas) return null
+
+  await seekVideo(timestamp)
+
+  const width = video.videoWidth || 640
+  const height = video.videoHeight || 360
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  context.drawImage(video, 0, 0, width, height)
+
+  return {
+    timestamp,
+    image: canvas.toDataURL('image/jpeg', 0.78),
+  }
+}
+
+const extractVideoFramesForChat = async () => {
+  const video = videoRef.value
+  if (!video) return []
+
+  await waitForVideoMetadata()
+  const duration = video.duration || videoDuration.value || 0
+  const times = duration > 2
+    ? [0.1, duration * 0.25, duration * 0.5, duration * 0.75, Math.max(duration - 0.2, 0.1)]
+    : [0.1]
+
+  const frames = []
+  for (const time of times) {
+    const frame = await captureVideoFrame(time)
+    if (frame) frames.push(frame)
+  }
+  return frames
+}
+
+const buildVideoSummary = (result) => {
+  const lines = []
+  const answer = result?.answer || {}
+  const llmAnalysis = result?.llm?.analysis || {}
+
+  if (llmAnalysis.summary) {
+    lines.push(llmAnalysis.summary)
+  } else if (answer.summary) {
+    lines.push(answer.summary)
+  } else if (answer.conclusion) {
+    lines.push(answer.conclusion)
+  }
+
+  if (Array.isArray(llmAnalysis.visible_findings) && llmAnalysis.visible_findings.length) {
+    lines.push(`关键帧可见信息：${llmAnalysis.visible_findings.slice(0, 6).join('；')}`)
+  } else if (Array.isArray(answer.evidence) && answer.evidence.length) {
+    lines.push(`关键帧依据：${answer.evidence.slice(0, 5).join('；')}`)
+  }
+
+  if (llmAnalysis.likely_scene) {
+    lines.push(`可能场景：${llmAnalysis.likely_scene}`)
+  }
+
+  if (result?.summary?.weak_frame_count) {
+    lines.push(`画面质量提示：有 ${result.summary.weak_frame_count} 个关键帧可能偏暗或模糊。`)
+  }
+
+  return lines.filter(Boolean).join('\n')
+}
+
+const analyzeVideoForChat = async (noteText = '') => {
+  if (!videoFileRef.value || imageLoading.value) return false
+
+  imageLoading.value = true
+  imageStatus.value = '正在抽取视频关键帧...'
+
+  try {
+    const frames = await extractVideoFramesForChat()
+    if (!frames.length) {
+      imageStatus.value = '视频关键帧抽取失败，请换一个更清晰的视频。'
+      return false
+    }
+
+    imageStatus.value = '正在识别视频关键帧...'
+    const response = await fetch(apiUrl('/api/multimodal/video/analyze'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        frames,
+        file_name: imageFileName.value,
+        note: noteText || question.value,
+        duration: videoDuration.value,
+      }),
+    })
+    const data = await response.json()
+
+    if (!response.ok || !data.success) {
+      imageStatus.value = data.message || `视频识别失败，状态码：${response.status}`
+      return false
+    }
+
+    const llmAnalysis = data.llm?.analysis || {}
+    const tags = [
+      ...(data.summary?.tags || []),
+      llmAnalysis.likely_scene,
+      ...(llmAnalysis.visible_findings || []).slice(0, 5),
+    ].filter(Boolean).slice(0, 8)
+
+    imageTagsText.value = tags.join('、')
+    imageSummary.value = buildVideoSummary(data) || '视频已完成关键帧识别，请结合文字描述继续提问。'
+    imageStatus.value = '视频已识别，会随消息一起发送给 AI。'
+    return true
+  } catch (error) {
+    imageStatus.value = '视频识别请求失败，请检查后端服务。'
+    console.error(error)
+    return false
+  } finally {
+    imageLoading.value = false
+  }
+}
+
 const appendFollowup = async (item) => {
   question.value = question.value.trim()
     ? `${question.value.trim()}\n${item}`
@@ -590,18 +804,22 @@ const openConversationSession = (sessionId) => {
 const buildUserText = (payload) => {
   const parts = []
   if (payload.text.trim()) parts.push(payload.text.trim())
+  const mediaLabel = attachmentKind.value === 'video' ? '视频' : '图片'
   if (payload.image_summary?.trim()) {
-    parts.push(imageFileName.value ? `已添加图片：${imageFileName.value}` : '已添加图片')
+    parts.push(imageFileName.value ? `已添加${mediaLabel}：${imageFileName.value}` : `已添加${mediaLabel}`)
   } else if (imageFileName.value && imageStatus.value) {
-    parts.push(`已上传图片：${imageFileName.value}（${imageStatus.value}）`)
+    parts.push(`已上传${mediaLabel}：${imageFileName.value}（${imageStatus.value}）`)
   } else if (imagePreview.value) {
     parts.push('已上传图片')
+  } else if (videoFileRef.value) {
+    parts.push('已上传视频')
   }
   return parts.join('\n')
 }
 
-const getPayloadInputType = (payload) => {
+const getPayloadInputType = (payload, fallbackInputType = 'text') => {
   if (payload.text && payload.image_summary) return 'mixed'
+  if (payload.image_summary && fallbackInputType === 'video') return 'video'
   if (payload.image_summary) return 'image'
   return 'text'
 }
@@ -627,7 +845,8 @@ const submitQuestion = async () => {
   const pendingInputType = inputType.value
   const pendingText = question.value.trim()
   const hasPendingImage = Boolean(imagePreview.value || imageFileRef.value || imageFileName.value)
-  const effectiveText = pendingText || (hasPendingImage ? '请根据我上传的图片进行健康分析' : '')
+  const hasPendingVideo = Boolean(videoFileRef.value)
+  const effectiveText = pendingText || (hasPendingVideo ? '请根据我上传的视频进行健康分析' : hasPendingImage ? '请根据我上传的图片进行健康分析' : '')
   if (hasPendingImage && !imagePreview.value && imageFileRef.value) {
     imageStatus.value = '正在读取图片...'
     try {
@@ -640,7 +859,7 @@ const submitQuestion = async () => {
     }
   }
 
-  if (hasPendingImage && !imagePreview.value) {
+  if (hasPendingImage && !hasPendingVideo && !imagePreview.value) {
     imageStatus.value = pendingText
       ? '图片读取失败，请重新选择图片，或移除附件后发送文字。'
       : '图片读取失败，请重新选择图片。'
@@ -648,6 +867,7 @@ const submitQuestion = async () => {
   }
 
   const pendingImagePreview = imagePreview.value
+  const pendingVideoFile = videoFileRef.value
   const pendingImageFileName = imageFileName.value
   const previousHistory = buildConversationHistory()
   const initialPayload = {
@@ -669,14 +889,15 @@ const submitQuestion = async () => {
     id: loadingId,
     role: 'assistant',
     type: 'loading',
-    hasImageAnalysis: Boolean(pendingImagePreview && !imageSummary.value.trim()),
-    loadingStage: pendingImagePreview && !imageSummary.value.trim() ? 'image' : 'safety',
+    hasImageAnalysis: Boolean((pendingImagePreview || pendingVideoFile) && !imageSummary.value.trim()),
+    loadingStage: (pendingImagePreview || pendingVideoFile) && !imageSummary.value.trim() ? 'image' : 'safety',
     content: '',
   })
 
   question.value = ''
   loading.value = true
-  scheduleLoadingStages(loadingId, Boolean(pendingImagePreview && !imageSummary.value.trim()))
+  scheduleLoadingStages(loadingId, Boolean((pendingImagePreview || pendingVideoFile) && !imageSummary.value.trim()))
+  saveChatCache()
   await resizeComposer()
   await scrollToBottom()
 
@@ -688,8 +909,15 @@ const submitQuestion = async () => {
       }
     }
 
-    if (pendingImagePreview && !imageSummary.value.trim()) {
-      throw new Error(`图片识别没有返回有效结果：${pendingImageFileName || '未命名图片'}`)
+    if (pendingVideoFile && !imageSummary.value && !imageLoading.value) {
+      const videoOk = await analyzeVideoForChat(effectiveText)
+      if (!videoOk) {
+        throw new Error(imageStatus.value || '视频识别失败，请稍后重试。')
+      }
+    }
+
+    if ((pendingImagePreview || pendingVideoFile) && !imageSummary.value.trim()) {
+      throw new Error(`${pendingVideoFile ? '视频' : '图片'}识别没有返回有效结果：${pendingImageFileName || '未命名文件'}`)
     }
 
     const payload = {
@@ -701,7 +929,9 @@ const submitQuestion = async () => {
       session_id: activeSessionId.value,
     }
     payload.text = effectiveText
-    payload.input_type = getPayloadInputType(payload)
+    payload.input_type = pendingText
+      ? getPayloadInputType(payload, pendingInputType)
+      : (payload.image_summary ? pendingInputType : 'text')
     clearAttachment()
 
     const response = await fetch(apiUrl('/api/agent/chat'), {
@@ -766,6 +996,7 @@ const submitQuestion = async () => {
   } finally {
     clearLoadingStageTimers()
     loading.value = false
+    saveChatCache()
     await scrollToBottom()
   }
 }
@@ -785,7 +1016,7 @@ onMounted(() => {
   if (sessionId) {
     restoreSessionFromServer(sessionId)
   } else {
-    restoreChatCache()
+    restoreChatCache({ markInterruptedLoading: isPageReload() })
   }
 })
 
@@ -806,6 +1037,9 @@ onBeforeUnmount(() => {
   clearLoadingStageTimers()
   stopRecognition()
   stopSpeaking()
+  if (videoPreviewUrl.value) {
+    URL.revokeObjectURL(videoPreviewUrl.value)
+  }
   window.removeEventListener('storage', syncCurrentUser)
   window.removeEventListener('rag-user-change', syncCurrentUser)
 })
@@ -815,6 +1049,14 @@ onBeforeUnmount(() => {
 .chat-page {
   display: grid;
   gap: 18px;
+}
+
+.media-probe {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .chat-shell {

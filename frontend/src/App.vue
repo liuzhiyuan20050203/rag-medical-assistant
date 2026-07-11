@@ -21,7 +21,7 @@
         <RouterLink to="/history">历史记录</RouterLink>
         <RouterLink v-if="isAdmin" to="/analytics">数据分析</RouterLink>
         <RouterLink v-if="isAdmin" to="/admin">管理后台</RouterLink>
-        <RouterLink to="/login">{{ accountLabel }}</RouterLink>
+        <RouterLink :to="currentUser ? '/profile' : '/login'">{{ accountLabel }}</RouterLink>
       </nav>
     </header>
 

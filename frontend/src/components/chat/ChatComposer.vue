@@ -2,7 +2,8 @@
   <form class="composer" @submit.prevent="$emit('submit')">
     <div v-if="attachmentVisible || speechStatusText" class="composer-status">
       <div v-if="attachmentVisible" class="attachment-pill">
-        <img v-if="imagePreview" :src="imagePreview" alt="已添加的图片" />
+        <img v-if="imagePreview && attachmentKind !== 'video'" :src="imagePreview" alt="已添加的图片" />
+        <Video v-else-if="attachmentKind === 'video'" :size="18" aria-hidden="true" />
         <Paperclip v-else :size="18" aria-hidden="true" />
         <span>{{ attachmentLabel }}</span>
         <b v-if="imageLoading">处理中</b>
@@ -26,6 +27,7 @@
       >
         <MicOff v-if="isListening" :size="22" aria-hidden="true" />
         <Mic v-else :size="22" aria-hidden="true" />
+        <span>{{ isListening ? '停止' : '语音' }}</span>
       </button>
 
       <textarea
@@ -45,6 +47,14 @@
         @change="handleImageFile"
       />
 
+      <input
+        ref="videoInputRef"
+        type="file"
+        accept="video/*"
+        class="sr-only"
+        @change="handleVideoFile"
+      />
+
       <button
         type="button"
         class="icon-btn"
@@ -54,6 +64,19 @@
         @click="openImagePicker"
       >
         <Image :size="22" aria-hidden="true" />
+        <span>图片</span>
+      </button>
+
+      <button
+        type="button"
+        class="icon-btn"
+        title="添加视频"
+        aria-label="添加视频"
+        :disabled="loading || imageLoading"
+        @click="openVideoPicker"
+      >
+        <Video :size="22" aria-hidden="true" />
+        <span>视频</span>
       </button>
 
       <button
@@ -65,13 +88,9 @@
       >
         <LoaderCircle v-if="loading || imageLoading" :size="22" aria-hidden="true" />
         <Send v-else :size="22" aria-hidden="true" />
+        <span>{{ loading || imageLoading ? '处理中' : '发送' }}</span>
       </button>
     </div>
-
-    <button type="button" class="new-chat-btn" :disabled="loading" @click="$emit('clear-conversation')">
-      <Plus :size="16" aria-hidden="true" />
-      新对话
-    </button>
   </form>
 </template>
 
@@ -83,8 +102,8 @@ import {
   Mic,
   MicOff,
   Paperclip,
-  Plus,
   Send,
+  Video,
   X,
 } from '@lucide/vue'
 
@@ -100,6 +119,10 @@ const props = defineProps({
   imagePreview: {
     type: String,
     default: '',
+  },
+  attachmentKind: {
+    type: String,
+    default: 'image',
   },
   attachmentLabel: {
     type: String,
@@ -140,12 +163,13 @@ const emit = defineEmits([
   'submit',
   'toggle-voice',
   'image-file',
+  'video-file',
   'clear-attachment',
-  'clear-conversation',
 ])
 
 const textareaRef = ref(null)
 const imageInputRef = ref(null)
+const videoInputRef = ref(null)
 
 const resize = async () => {
   await nextTick()
@@ -169,10 +193,22 @@ const openImagePicker = () => {
   imageInputRef.value?.click()
 }
 
+const openVideoPicker = () => {
+  videoInputRef.value?.click()
+}
+
 const handleImageFile = (event) => {
   const file = event.target.files?.[0]
   if (file) {
     emit('image-file', file)
+  }
+  event.target.value = ''
+}
+
+const handleVideoFile = (event) => {
+  const file = event.target.files?.[0]
+  if (file) {
+    emit('video-file', file)
   }
   event.target.value = ''
 }
@@ -264,7 +300,7 @@ defineExpose({
 
 .chat-composer-bar {
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) 46px 46px;
+  grid-template-columns: 58px minmax(0, 1fr) 58px 58px 64px;
   gap: 8px;
   align-items: end;
   padding: 8px;
@@ -304,10 +340,13 @@ textarea:focus {
 }
 
 .icon-btn {
-  display: grid;
-  width: 46px;
-  height: 46px;
-  place-items: center;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 50px;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
   color: var(--text-secondary);
   background: #ffffff;
   border: 1px solid var(--border);
@@ -318,6 +357,12 @@ textarea:focus {
     border-color 0.2s ease,
     color 0.2s ease,
     transform 0.2s ease;
+}
+
+.icon-btn span {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .voice-btn {
@@ -371,22 +416,6 @@ textarea:focus {
   animation: spin 1s linear infinite;
 }
 
-.new-chat-btn {
-  display: inline-flex;
-  width: fit-content;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-muted);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.new-chat-btn:hover:not(:disabled) {
-  color: #1d4ed8;
-}
-
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -395,13 +424,16 @@ textarea:focus {
 
 @media (max-width: 640px) {
   .chat-composer-bar {
-    grid-template-columns: 42px minmax(0, 1fr) 42px 42px;
-    padding: 8px;
+    grid-template-columns: 46px minmax(0, 1fr) 46px 46px 52px;
+    gap: 6px;
   }
 
   .icon-btn {
-    width: 42px;
-    height: 42px;
+    height: 46px;
+  }
+
+  .icon-btn span {
+    display: none;
   }
 }
 </style>

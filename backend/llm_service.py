@@ -2,11 +2,12 @@ import json
 import os
 import re
 import requests
+from pathlib import Path
 from textwrap import dedent
 from dotenv import load_dotenv
 
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 
 def get_llm_config():

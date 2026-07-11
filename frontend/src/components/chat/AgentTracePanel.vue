@@ -76,6 +76,7 @@ const toolLabels = {
   normalize_input: '整理文字/语音/图片输入',
   warning_check: '危险症状规则检查',
   rule_planner: '规则意图判断',
+  rule_planner_fast_path: '规则快速意图判断',
   llm_planner: '大模型意图规划',
   medicine_search: '药品知识库查询',
   rag_search: 'RAG 知识库检索',

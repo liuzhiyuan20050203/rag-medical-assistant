@@ -41,7 +41,170 @@
       </article>
     </section>
 
+    <section class="quality-section">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">QUALITY LOOP</p>
+          <h3>系统质量诊断</h3>
+        </div>
+        <span>基于历史问答重新检索当前知识库，区分仍待改进和已改善的问题。</span>
+      </div>
+
+      <div class="quality-grid">
+        <article class="quality-card ui-card">
+          <strong>{{ analytics.quality_overview.current_unresolved_count }}</strong>
+          <span>当前待改进</span>
+        </article>
+        <article class="quality-card ui-card improved">
+          <strong>{{ analytics.quality_overview.improved_count }}</strong>
+          <span>已改善问题</span>
+        </article>
+        <article class="quality-card ui-card">
+          <strong>{{ analytics.quality_overview.low_confidence_count }}</strong>
+          <span>低置信复核</span>
+        </article>
+        <article class="quality-card ui-card medicine">
+          <strong>{{ analytics.quality_overview.medicine_gap_count }}</strong>
+          <span>药品缺口</span>
+        </article>
+        <article class="quality-card ui-card">
+          <strong>{{ analytics.rag_quality.average_top_score }}</strong>
+          <span>平均召回分</span>
+        </article>
+        <article class="quality-card ui-card">
+          <strong>{{ analytics.rag_quality.no_retrieval_count }}</strong>
+          <span>无召回记录</span>
+        </article>
+      </div>
+
+      <div class="diagnosis-grid">
+        <article class="diagnosis-card wide ui-card">
+          <div class="section-title compact">
+            <div>
+              <p class="eyebrow">GAPS</p>
+              <h3>知识库待补充建议</h3>
+            </div>
+          </div>
+
+          <div v-if="analytics.knowledge_gaps.length" class="gap-list">
+            <div v-for="item in analytics.knowledge_gaps" :key="`${item.keyword}-${item.gap_type}`" class="gap-item">
+              <div>
+                <b>{{ item.keyword }}</b>
+                <span>{{ item.gap_type }} · {{ item.count }} 次</span>
+              </div>
+              <p>{{ item.suggested_action }}</p>
+              <small v-if="item.examples?.length">示例：{{ item.examples.join(' / ') }}</small>
+            </div>
+          </div>
+
+          <p v-else class="empty-state ui-empty">当前没有明显的知识库缺口，后续测试数据增加后会继续更新。</p>
+        </article>
+
+        <article class="diagnosis-card ui-card">
+          <div class="section-title compact">
+            <div>
+              <p class="eyebrow">REVIEW</p>
+              <h3>当前待复核回答</h3>
+            </div>
+          </div>
+
+          <div v-if="analytics.review_suggestions.length" class="case-list">
+            <div v-for="item in analytics.review_suggestions" :key="item.record_id" class="case-item">
+              <div class="case-head">
+                <b>{{ item.issue_type }}</b>
+                <span>{{ item.status_label }}</span>
+              </div>
+              <p>{{ item.question }}</p>
+              <small>
+                {{ item.action_label }} · 置信 {{ formatPercent(item.confidence) }} · 当前召回 {{ item.current_retrieved_count }}
+              </small>
+            </div>
+          </div>
+
+          <p v-else class="empty-state ui-empty">当前没有需要优先复核的回答。</p>
+        </article>
+
+        <article class="diagnosis-card ui-card">
+          <div class="section-title compact">
+            <div>
+              <p class="eyebrow">IMPROVED</p>
+              <h3>已改善问题</h3>
+            </div>
+          </div>
+
+          <div v-if="analytics.improved_cases.length" class="case-list">
+            <div v-for="item in analytics.improved_cases" :key="item.record_id" class="case-item improved">
+              <div class="case-head">
+                <b>{{ item.keyword }}</b>
+                <span>{{ item.status_label }}</span>
+              </div>
+              <p>{{ item.question }}</p>
+              <small>
+                当前命中：{{ item.current_docs.map((doc) => doc.title).join('、') || '无' }}
+              </small>
+            </div>
+          </div>
+
+          <p v-else class="empty-state ui-empty">暂无已改善记录，补充知识库并刷新分析后会自动出现。</p>
+        </article>
+      </div>
+    </section>
+
     <section class="chart-grid">
+      <article class="chart-card wide ui-card">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">AGENT</p>
+            <h3>Agent 调度质量</h3>
+          </div>
+        </div>
+
+        <div v-if="analytics.action_distribution.length" class="action-table">
+          <div class="action-row header">
+            <span>调度类型</span>
+            <span>次数</span>
+            <span>平均置信</span>
+            <span>低置信</span>
+            <span>无召回</span>
+          </div>
+          <div v-for="item in analytics.action_distribution" :key="item.action" class="action-row">
+            <strong>{{ item.label }}</strong>
+            <span>{{ item.count }}</span>
+            <span>{{ formatPercent(item.average_confidence) }}</span>
+            <span>{{ item.low_confidence_count }}</span>
+            <span>{{ item.no_retrieval_count }}</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="chart-card ui-card">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">RAG QUALITY</p>
+            <h3>RAG 检索质量</h3>
+          </div>
+        </div>
+
+        <div class="rag-quality-list">
+          <div>
+            <span>参与评估</span>
+            <strong>{{ analytics.rag_quality.total_cases }}</strong>
+          </div>
+          <div>
+            <span>平均召回文档</span>
+            <strong>{{ analytics.rag_quality.average_retrieved_count }}</strong>
+          </div>
+          <div>
+            <span>低分召回</span>
+            <strong>{{ analytics.rag_quality.low_score_count }}</strong>
+          </div>
+          <div>
+            <span>无召回</span>
+            <strong>{{ analytics.rag_quality.no_retrieval_count }}</strong>
+          </div>
+        </div>
+      </article>
+
       <article class="chart-card wide ui-card">
         <div class="section-title">
           <div>
@@ -213,6 +376,27 @@ const analytics = ref({
   word_cloud: [],
   satisfaction: [],
   daily_questions: [],
+  quality_overview: {
+    rechecked_count: 0,
+    review_count: 0,
+    current_unresolved_count: 0,
+    improved_count: 0,
+    low_confidence_count: 0,
+    medicine_gap_count: 0,
+  },
+  rag_quality: {
+    total_cases: 0,
+    average_top_score: 0,
+    average_retrieved_count: 0,
+    no_retrieval_count: 0,
+    low_score_count: 0,
+  },
+  action_distribution: [],
+  knowledge_gaps: [],
+  review_suggestions: [],
+  improved_cases: [],
+  low_confidence_cases: [],
+  medicine_gap_stats: [],
 })
 
 const totalRisk = computed(() => {
@@ -289,6 +473,12 @@ const trendHeight = (item) => {
   const max = maxCount(analytics.value.daily_questions)
   const percent = (item.count / max) * 100
   return `${Math.max(percent, 8)}%`
+}
+
+const formatPercent = (value) => {
+  const number = Number(value || 0)
+  if (!Number.isFinite(number)) return '0%'
+  return `${Math.round(number * 100)}%`
 }
 
 const loadAnalytics = async (force = false) => {
@@ -385,6 +575,197 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
+}
+
+.quality-section {
+  display: grid;
+  gap: 18px;
+}
+
+.quality-section > .section-title {
+  align-items: end;
+  margin-bottom: 0;
+}
+
+.quality-section > .section-title > span {
+  max-width: 520px;
+  color: var(--text-muted);
+  line-height: 1.7;
+  font-weight: 800;
+}
+
+.quality-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 14px;
+}
+
+.quality-card {
+  min-height: 104px;
+  padding: 18px 12px;
+  text-align: center;
+}
+
+.quality-card strong {
+  display: block;
+  color: var(--medical-blue);
+  font-size: 30px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.quality-card.improved strong {
+  color: var(--clinical-green);
+}
+
+.quality-card.medicine strong {
+  color: var(--medicine-amber);
+}
+
+.quality-card span {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-weight: 900;
+}
+
+.diagnosis-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.diagnosis-card {
+  min-height: 300px;
+  padding: 22px;
+}
+
+.diagnosis-card.wide {
+  grid-column: span 2;
+}
+
+.section-title.compact {
+  margin-bottom: 14px;
+}
+
+.section-title.compact h3 {
+  font-size: 20px;
+}
+
+.gap-list,
+.case-list {
+  display: grid;
+  gap: 12px;
+}
+
+.gap-item,
+.case-item {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  background: #f8fbfd;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.gap-item div,
+.case-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gap-item b,
+.case-item b {
+  color: var(--text-primary);
+  font-weight: 900;
+}
+
+.gap-item span,
+.case-head span {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.gap-item p,
+.case-item p {
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.gap-item small,
+.case-item small {
+  color: var(--text-muted);
+  line-height: 1.6;
+  font-weight: 800;
+}
+
+.case-item.improved {
+  border-color: rgba(16, 185, 129, 0.25);
+  background: rgba(236, 253, 245, 0.62);
+}
+
+.action-table {
+  display: grid;
+  gap: 10px;
+}
+
+.action-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) repeat(4, minmax(74px, 0.35fr));
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  background: #f8fbfd;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.action-row.header {
+  color: var(--text-muted);
+  background: transparent;
+  border-color: transparent;
+  font-weight: 900;
+}
+
+.action-row strong,
+.action-row span {
+  color: var(--text-secondary);
+  font-weight: 900;
+}
+
+.action-row strong {
+  color: var(--text-primary);
+}
+
+.rag-quality-list {
+  display: grid;
+  gap: 12px;
+}
+
+.rag-quality-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  background: #f8fbfd;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.rag-quality-list span {
+  color: var(--text-muted);
+  font-weight: 900;
+}
+
+.rag-quality-list strong {
+  color: var(--medical-blue);
+  font-size: 24px;
+  font-weight: 900;
 }
 
 .chart-card {
@@ -641,24 +1022,42 @@ onMounted(() => {
     grid-template-columns: repeat(3, 1fr);
   }
 
+  .quality-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
   .chart-grid {
     grid-template-columns: 1fr;
   }
 
-  .chart-card.wide {
+  .chart-card.wide,
+  .diagnosis-card.wide {
     grid-column: span 1;
+  }
+
+  .diagnosis-grid {
+    grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 640px) {
-  .overview-grid {
+  .overview-grid,
+  .quality-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
   .bar-row,
   .satisfaction-list > div,
-  .rank-item {
+  .rank-item,
+  .action-row {
     grid-template-columns: 1fr;
+  }
+
+  .quality-section > .section-title,
+  .gap-item div,
+  .case-head {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .bar-row strong,

@@ -9,7 +9,8 @@ from rag_service import build_simple_answer, search_knowledge
 from safety_check import check_warning
 
 
-INPUT_TYPES = {"text", "voice", "image", "mixed"}
+INPUT_TYPES = {"text", "voice", "image", "video", "mixed"}
+VISUAL_INPUT_TYPES = {"image", "video"}
 MEDICINE_INTENTS = [
     "药",
     "用药",
@@ -59,6 +60,61 @@ MEDICINE_NAME_HINTS = [
     "他汀",
     "洛芬",
 ]
+MEDICINE_DOSAGE_FORMS = [
+    "缓释胶囊",
+    "肠溶胶囊",
+    "分散片",
+    "咀嚼片",
+    "缓释片",
+    "肠溶片",
+    "泡腾片",
+    "滴眼液",
+    "口服液",
+    "混悬液",
+    "注射液",
+    "软膏",
+    "乳膏",
+    "喷雾",
+    "胶囊",
+    "颗粒",
+    "片",
+    "丸",
+    "散",
+    "膏",
+    "贴",
+]
+MEDICINE_QUESTION_PATTERNS = [
+    "有什么禁忌",
+    "禁忌",
+    "有什么副作用",
+    "副作用",
+    "不良反应",
+    "注意事项",
+    "有什么注意",
+    "说明书",
+    "怎么吃",
+    "怎么用",
+    "怎么使用",
+    "如何使用",
+    "能不能吃",
+    "可以吃吗",
+    "能吃吗",
+    "吃多少",
+    "剂量",
+    "用量",
+    "适用",
+    "有什么用",
+]
+SYMPTOM_MEDICINE_REQUESTS = [
+    "吃什么药",
+    "用什么药",
+    "该吃什么",
+    "该用什么",
+    "要不要吃药",
+    "需要吃药",
+    "买什么药",
+    "推荐什么药",
+]
 COMMON_MEDICAL_PRODUCTS = [
     "健胃消食片",
     "创可贴",
@@ -79,14 +135,36 @@ SYMPTOM_INTENTS = [
     "疼",
     "痛",
     "咳",
+    "咳嗽",
     "发烧",
     "发热",
+    "低热",
+    "高热",
     "流鼻涕",
+    "流涕",
+    "鼻塞",
+    "打喷嚏",
+    "咽痛",
+    "喉咙痛",
+    "嗓子疼",
+    "嗓子痛",
+    "头痛",
     "腹泻",
     "拉肚子",
+    "腹痛",
+    "胃痛",
+    "胃胀",
     "恶心",
     "呕吐",
     "头晕",
+    "乏力",
+    "畏寒",
+    "怕冷",
+    "便秘",
+    "牙痛",
+    "口腔溃疡",
+    "眼痒",
+    "耳痛",
     "皮疹",
     "湿疹",
     "瘙痒",
@@ -94,6 +172,31 @@ SYMPTOM_INTENTS = [
     "红斑",
     "过敏",
     "怎么办",
+]
+COMMON_DISEASE_TERMS = [
+    "感冒",
+    "普通感冒",
+    "流感",
+    "鼻炎",
+    "过敏性鼻炎",
+    "咽炎",
+    "扁桃体炎",
+    "支气管炎",
+    "胃炎",
+    "肠胃炎",
+    "胃肠炎",
+    "消化不良",
+    "便秘",
+    "腹泻",
+    "湿疹",
+    "荨麻疹",
+    "皮炎",
+    "痤疮",
+    "口腔溃疡",
+    "牙龈炎",
+    "结膜炎",
+    "中暑",
+    "失眠",
 ]
 IMAGE_SYMPTOM_WORDS = [
     "皮肤",
@@ -327,12 +430,93 @@ def has_any(text, keywords):
     return any(keyword in text for keyword in keywords)
 
 
+def normalize_medicine_name(value):
+    name = clean_text(value).lower()
+    if not name:
+        return ""
+
+    for form in MEDICINE_DOSAGE_FORMS:
+        normalized_form = clean_text(form).lower()
+        if normalized_form and name.endswith(normalized_form) and len(name) > len(normalized_form):
+            return name[:-len(normalized_form)]
+
+    return name
+
+
+def medicine_name_matches_question(medicine_name, question):
+    name = clean_text(medicine_name)
+    normalized_name = normalize_medicine_name(name)
+    normalized_question = clean_text(question).lower()
+
+    if not name or not normalized_question:
+        return False
+
+    return (
+        name.lower() in normalized_question
+        or (len(normalized_name) >= 2 and normalized_name in normalized_question)
+    )
+
+
+def extract_medicine_candidate_from_question(question):
+    question = clean_text(question)
+    if not question:
+        return ""
+
+    for pattern in MEDICINE_QUESTION_PATTERNS:
+        index = question.find(pattern)
+        if index <= 0:
+            continue
+
+        candidate = question[:index]
+        candidate = re.sub(r"^(我想问|想问|请问|帮我看下|帮我看看|这个|这种|该)", "", candidate)
+        candidate = re.sub(r"(药|药品)$", "", candidate)
+        if 2 <= len(candidate) <= 20 and not has_any(candidate, SYMPTOM_INTENTS + COMMON_DISEASE_TERMS):
+            return candidate
+
+    return ""
+
+
+def find_medicine_name_by_alias(question):
+    candidate = extract_medicine_candidate_from_question(question)
+    search_text = candidate or question
+
+    for medicine in get_all_medicines():
+        name = clean_text(medicine.get("name", ""))
+        if medicine_name_matches_question(name, search_text):
+            return name
+
+    if candidate and search_medicine(candidate):
+        return candidate
+
+    return ""
+
+
+def is_standalone_common_disease(text):
+    normalized = clean_text(text)
+    return normalized in COMMON_DISEASE_TERMS or normalized.removeprefix("我").removesuffix("了") in COMMON_DISEASE_TERMS
+
+
 def image_looks_like_symptom(normalized):
     image_text = "。".join([
         normalized.get("image_summary", ""),
         "、".join(normalized.get("image_tags", [])),
     ])
     return has_any(image_text, IMAGE_SYMPTOM_WORDS)
+
+
+def is_common_health_query(normalized):
+    question = normalized.get("question", "")
+    return has_any(question, SYMPTOM_INTENTS) or has_any(question, COMMON_DISEASE_TERMS) or image_looks_like_symptom(normalized)
+
+
+def has_rag_candidate(question):
+    if not question:
+        return False
+
+    try:
+        return bool(search_knowledge(question, top_k=1))
+    except Exception:
+        return False
 
 
 def asks_about_symptom_image(normalized):
@@ -343,11 +527,38 @@ def asks_about_symptom_image(normalized):
     return has_any(text, SYMPTOM_IMAGE_QUESTIONS) and image_looks_like_symptom(normalized)
 
 
+def is_symptom_medicine_request(normalized):
+    question = normalized.get("question", "")
+    if not question:
+        return False
+
+    return (
+        is_common_health_query(normalized)
+        and has_any(question, SYMPTOM_MEDICINE_REQUESTS)
+        and not find_medicine_name_by_alias(question)
+    )
+
+
 def find_medicine_keyword(normalized):
     question = normalized["question"]
     history_text = build_history_text(normalized.get("history", []))
-    search_space = "。".join([question, history_text])
     candidates = []
+
+    if is_standalone_common_disease(normalized.get("text", "")):
+        return ""
+
+    if is_common_health_query(normalized) and not has_any(question, MEDICINE_INTENTS + MEDICINE_CONTEXT_WORDS + CONTEXT_REFERENCES):
+        return ""
+
+    if is_symptom_medicine_request(normalized):
+        return ""
+
+    if has_any(question, COMMON_DISEASE_TERMS) and not has_any(question, MEDICINE_INTENTS + MEDICINE_CONTEXT_WORDS):
+        return ""
+
+    alias_keyword = find_medicine_name_by_alias(question)
+    if alias_keyword:
+        return alias_keyword
 
     for medicine in get_all_medicines():
         name = clean_text(medicine.get("name", ""))
@@ -382,7 +593,7 @@ def find_medicine_keyword(normalized):
 
     match = re.search(
         r"(?:药名|药品名称|药品|药盒|说明书|识别为药品|可能是药品|这个药)[：:\s]*([\u4e00-\u9fffA-Za-z0-9\-]{2,20})",
-        search_space,
+        question,
     )
     if match:
         return match.group(1)
@@ -391,6 +602,9 @@ def find_medicine_keyword(normalized):
 
 
 def infer_health_product_keyword(normalized):
+    if is_standalone_common_disease(normalized.get("text", "")):
+        return ""
+
     keyword = find_medicine_keyword(normalized)
     if keyword:
         return keyword
@@ -429,6 +643,9 @@ def is_medicine_query(normalized):
     if asks_about_symptom_image(normalized):
         return False
 
+    if is_symptom_medicine_request(normalized):
+        return False
+
     if find_medicine_keyword(normalized):
         return True
 
@@ -461,12 +678,16 @@ def is_information_insufficient(normalized):
     if text in VAGUE_QUESTIONS:
         return True
 
-    has_symptom = has_any(question, SYMPTOM_INTENTS)
-    if has_symptom or image_looks_like_symptom(normalized):
+    if is_common_health_query(normalized):
         return False
 
     if len(question) < 8:
+        if has_rag_candidate(question):
+            return False
         return True
+
+    if has_rag_candidate(question):
+        return False
 
     return True
 
@@ -588,6 +809,35 @@ def build_medicine_answer(keyword, medicines):
     lines.append("")
     lines.append("安全提示：请按药品说明书或医生、药师指导使用，不要自行叠加同类药物或调整剂量。本系统仅提供健康信息参考，不能替代医生诊断或药师指导。")
     return "\n".join(lines)
+
+
+def visual_summary_for_warning(summary):
+    """
+    视觉模型会返回“建议补充/需要警惕”等推测性内容。
+    危险规则只应该检查用户明确描述或画面可见事实，避免把追问项误判成已发生症状。
+    """
+    text = clean_text(summary)
+    if not text:
+        return ""
+
+    safe_parts = []
+    for part in re.split(r"[。\n；;]", text):
+        part = part.strip()
+        if not part:
+            continue
+        if any(marker in part for marker in ["建议补充", "还需要补充", "需要警惕", "危险", "红旗", "如出现", "如果出现", "是否伴随"]):
+            continue
+        safe_parts.append(part)
+
+    return "。".join(safe_parts)
+
+
+def warning_check_text(normalized):
+    text = normalized.get("text", "")
+    if text:
+        return text
+
+    return visual_summary_for_warning(normalized.get("image_summary", ""))
 
 
 def docs_from_medicines(medicines):
@@ -974,7 +1224,10 @@ def can_skip_llm_planner(normalized):
     if is_information_insufficient(normalized):
         return True
 
-    if normalized.get("input_type") == "image" and normalized.get("image_summary"):
+    if is_common_health_query(normalized):
+        return True
+
+    if normalized.get("input_type") in VISUAL_INPUT_TYPES and normalized.get("image_summary"):
         return True
 
     if asks_about_symptom_image(normalized):
@@ -1101,7 +1354,7 @@ def run_agent(data):
         }
         return finalize_agent_response(apply_reliability(response, normalized, answer, retrieved_docs=[]))
 
-    warning_result = check_warning(question)
+    warning_result = check_warning(warning_check_text(normalized))
     used_tools.append("warning_check")
 
     if warning_result.get("has_warning"):
@@ -1230,8 +1483,8 @@ def run_agent(data):
             used_tools.append("local_fallback")
             answer = fallback_answer
         answer += low_confidence_notice("medicine_query", plan["confidence"])
-        action = "image_assist" if normalized["input_type"] == "image" else "medicine_query"
-        reason = "图片识别结果包含药品信息，Agent 调用药品知识库。" if action == "image_assist" else "识别为药品查询，Agent 调用药品知识库。"
+        action = "image_assist" if normalized["input_type"] in VISUAL_INPUT_TYPES else "medicine_query"
+        reason = "视觉识别结果包含药品信息，Agent 调用药品知识库。" if action == "image_assist" else "识别为药品查询，Agent 调用药品知识库。"
         reliability = build_reliability_report(
             action,
             normalized,
@@ -1324,11 +1577,12 @@ def run_agent(data):
     else:
         used_tools.append("local_fallback")
         answer = fallback_answer
-    if normalized["input_type"] == "image" and normalized.get("image_summary"):
-        answer = f"图片识别结果：\n{normalized['image_summary']}\n\n{answer}"
+    if normalized["input_type"] in VISUAL_INPUT_TYPES and normalized.get("image_summary"):
+        visual_label = "视频关键帧识别结果" if normalized["input_type"] == "video" else "图片识别结果"
+        answer = f"{visual_label}：\n{normalized['image_summary']}\n\n{answer}"
     answer += low_confidence_notice(action="rag_answer", confidence=plan["confidence"])
-    action = "image_assist" if normalized["input_type"] == "image" else "rag_answer"
-    reason = "图片识别结果被转成文本后进入 RAG 问答。" if action == "image_assist" else "识别为症状或健康问题，Agent 调用 RAG 知识库。"
+    action = "image_assist" if normalized["input_type"] in VISUAL_INPUT_TYPES else "rag_answer"
+    reason = "视觉识别结果被转成文本后进入 RAG 问答。" if action == "image_assist" else "识别为症状或健康问题，Agent 调用 RAG 知识库。"
     reliability = build_reliability_report(
         action,
         normalized,

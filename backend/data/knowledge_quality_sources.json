@@ -1,0 +1,71 @@
+{
+  "batch": "knowledge_quality_enrichment_2026_07",
+  "review_status": "待小组人工复核",
+  "method": "人工整理与结构化归纳；未使用爬虫；未直接复制网页正文；不包含具体诊断结论和剂量。",
+  "source_note": "本批知识为项目实训用保守版结构化整理初稿，未直接爬取或复制网页正文；参考公开权威健康科普、药品说明书信息和常见临床安全边界进行人工归纳，不包含具体诊断结论和用药剂量，正式展示前建议由小组人工复核。",
+  "reference_sources": [
+    {
+      "name": "国家药品监督管理局药品数据查询",
+      "url": "https://www.nmpa.gov.cn/datasearch/home-index.html",
+      "usage": "药品名称、适应症、禁忌、不良反应等说明书信息的复核入口。"
+    },
+    {
+      "name": "国家卫生健康委员会健康科普",
+      "url": "https://www.nhc.gov.cn/",
+      "usage": "常见病症、健康提示、就医提醒等内容的参考来源。"
+    },
+    {
+      "name": "中国疾控中心健康科普",
+      "url": "https://www.chinacdc.cn/jkkp/",
+      "usage": "传染病、呼吸道症状、发热、老年人健康提示等内容的参考来源。"
+    },
+    {
+      "name": "MedlinePlus Medical Encyclopedia",
+      "url": "https://medlineplus.gov/encyclopedia.html",
+      "usage": "常见症状、居家护理、何时就医等英文权威资料的辅助参考。"
+    },
+    {
+      "name": "MedlinePlus Drug Information",
+      "url": "https://medlineplus.gov/druginformation.html",
+      "usage": "常见药品用途、注意事项、不良反应等药品信息的辅助参考。"
+    }
+  ],
+  "enriched_diseases": [
+    "咳嗽",
+    "发热",
+    "头痛",
+    "头晕",
+    "腹泻",
+    "胃痛",
+    "便秘",
+    "失眠",
+    "心悸",
+    "胸闷",
+    "湿疹",
+    "皮肤瘙痒"
+  ],
+  "enriched_medicines": [
+    "布洛芬片",
+    "对乙酰氨基酚",
+    "阿莫西林胶囊",
+    "氯雷他定",
+    "蒙脱石散",
+    "奥美拉唑",
+    "法莫替丁",
+    "乳果糖",
+    "炉甘石洗剂",
+    "莫匹罗星软膏",
+    "他汀类药物",
+    "健胃消食片"
+  ],
+  "enriched_warning_rules": [
+    "胸痛伴呼吸困难",
+    "胸闷伴大汗",
+    "头痛伴视物模糊",
+    "头痛伴颈部僵硬",
+    "皮疹伴呼吸困难",
+    "老人跌倒后意识异常",
+    "咳血",
+    "黑便"
+  ]
+}

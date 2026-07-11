@@ -8,6 +8,7 @@
       </div>
 
       <div class="session-actions">
+        <RouterLink to="/profile">个人中心</RouterLink>
         <RouterLink to="/chat">进入 AI 助手</RouterLink>
         <RouterLink v-if="currentUser.role === 'admin'" to="/admin">管理后台</RouterLink>
         <button type="button" @click="logout">
@@ -152,7 +153,7 @@ import {
   MessageSquareText,
   ShieldCheck,
   UserRound,
-} from '@lucide/vue'
+} from 'lucide-vue-next'
 import { apiUrl } from '../api'
 
 const router = useRouter()
@@ -240,7 +241,7 @@ const submitForm = async () => {
       window.dispatchEvent(new Event('rag-user-change'))
       currentUser.value = data.user
 
-      router.push(data.user.role === 'admin' ? '/admin' : '/chat')
+      router.push('/profile')
     }
 
     if (data.success && mode.value === 'register') {
