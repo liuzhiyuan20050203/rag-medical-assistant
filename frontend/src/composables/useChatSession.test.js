@@ -56,8 +56,34 @@ describe('useChatSession', () => {
     expect(restored.activeSessionId.value).toBe(42)
     expect(restored.messages.value).toEqual([
       { id: 'user-1', role: 'user', content: '头痛三天' },
+      { id: 'loading-1', role: 'assistant', type: 'loading', content: '' },
       { id: 'assistant-1', role: 'assistant', content: '建议观察并补充体温。' },
     ])
+  })
+
+  it('marks a cached loading response as interrupted after a full page reload', async () => {
+    localStorage.setItem('ragUser', JSON.stringify({ id: 7, username: 'doctor' }))
+
+    const session = useChatSession()
+    session.loadCurrentUser()
+    session.messages.value = [
+      { id: 'user-1', role: 'user', content: '头痛三天' },
+      { id: 'loading-1', role: 'assistant', type: 'loading', content: '' },
+    ]
+    session.saveChatCache()
+
+    const restored = useChatSession()
+    restored.loadCurrentUser()
+    await expect(restored.restoreChatCache({ markInterruptedLoading: true })).resolves.toBe(true)
+
+    expect(restored.messages.value).toHaveLength(2)
+    expect(restored.messages.value[1]).toMatchObject({
+      role: 'assistant',
+      error: {
+        type: 'InterruptedRequest',
+      },
+    })
+    expect(restored.messages.value[1].type).toBeUndefined()
   })
 
   it('clears only the current conversation state when starting a new chat', () => {
@@ -112,6 +138,19 @@ describe('useChatSession', () => {
     expect(fetch).not.toHaveBeenCalled()
     expect(session.conversationSessions.value).toEqual([])
     expect(session.sessionsStatus.value).toBe('登录后会自动保存并显示历史会话。')
+  })
+
+  it('keeps visitor mode local and skips personal session loading', async () => {
+    localStorage.setItem('ragGuest', 'true')
+
+    const session = useChatSession()
+    session.loadCurrentUser()
+    await expect(session.loadConversationSessions()).resolves.toEqual([])
+
+    expect(session.isGuest.value).toBe(true)
+    expect(fetch).not.toHaveBeenCalled()
+    expect(session.conversationSessions.value).toEqual([])
+    expect(session.sessionsStatus.value).toBe('游客模式可直接咨询，但不会保存到个人账号。')
   })
 
   it('restores a server conversation and maps stored messages for ChatMessage', async () => {

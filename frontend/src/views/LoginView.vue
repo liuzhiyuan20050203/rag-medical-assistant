@@ -1,19 +1,18 @@
 <template>
   <div class="auth-page">
-    <section v-if="currentUser" class="session-strip">
+    <section v-if="currentUser || guestMode" class="session-strip">
       <div>
-        <span>当前账号</span>
-        <strong>{{ currentUser.username }}</strong>
-        <small>{{ currentUser.role === 'admin' ? '管理员' : '普通用户' }}</small>
+        <span>当前状态</span>
+        <strong>{{ currentUser?.username || '游客模式' }}</strong>
+        <small>{{ sessionLabel }}</small>
       </div>
 
       <div class="session-actions">
-        <RouterLink to="/profile">个人中心</RouterLink>
         <RouterLink to="/chat">进入 AI 助手</RouterLink>
-        <RouterLink v-if="currentUser.role === 'admin'" to="/admin">管理后台</RouterLink>
+        <RouterLink v-if="currentUser?.role === 'admin'" to="/admin">管理后台</RouterLink>
         <button type="button" @click="logout">
           <LogOut :size="17" aria-hidden="true" />
-          退出
+          {{ currentUser ? '退出' : '退出游客模式' }}
         </button>
       </div>
     </section>
@@ -21,9 +20,9 @@
     <section class="auth-shell">
       <aside class="auth-intro">
         <span class="eyebrow">SECURE ACCESS</span>
-        <h1>登录 AI 医疗 Agent 助手</h1>
+        <h1>{{ introTitle }}</h1>
         <p>
-          登录后可保存个人对话、从历史记录继续咨询；管理员账号可进入后台管理知识库、查看 Agent 调度日志。
+          {{ introText }}
         </p>
 
         <div class="trust-list" aria-label="登录能力说明">
@@ -45,26 +44,9 @@
       <form class="auth-card" @submit.prevent="submitForm">
         <div class="card-head">
           <div>
-            <span>{{ mode === 'login' ? '欢迎回来' : '创建普通用户账号' }}</span>
-            <h2>{{ mode === 'login' ? '登录账号' : '注册账号' }}</h2>
+            <span>{{ cardKicker }}</span>
+            <h2>{{ cardTitle }}</h2>
           </div>
-        </div>
-
-        <div class="mode-switch" aria-label="账号模式">
-          <button
-            type="button"
-            :class="{ active: mode === 'login' }"
-            @click="setMode('login')"
-          >
-            登录
-          </button>
-          <button
-            type="button"
-            :class="{ active: mode === 'register' }"
-            @click="setMode('register')"
-          >
-            注册
-          </button>
         </div>
 
         <label class="field">
@@ -126,7 +108,8 @@
 
         <button class="submit-btn" type="submit" :disabled="loading">
           <LoaderCircle v-if="loading" class="spin" :size="18" aria-hidden="true" />
-          <ArrowRight v-else :size="18" aria-hidden="true" />
+          <UserPlus v-else-if="isRegister" :size="18" aria-hidden="true" />
+          <LogIn v-else :size="18" aria-hidden="true" />
           {{ loading ? '处理中...' : mode === 'login' ? '登录并继续' : '创建账号' }}
         </button>
 
@@ -134,28 +117,49 @@
           {{ message }}
         </p>
 
+        <div class="auth-links">
+          <RouterLink :to="alternatePath">{{ alternateText }}</RouterLink>
+        </div>
+
+        <div class="guest-divider">
+          <span>或者</span>
+        </div>
+
+        <button class="guest-btn" type="button" @click="enterGuestMode">
+          <MessageSquareText :size="18" aria-hidden="true" />
+          游客体验 AI 咨询
+        </button>
       </form>
     </section>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
-  ArrowRight,
   DatabaseZap,
   Eye,
   EyeOff,
   LoaderCircle,
   LockKeyhole,
+  LogIn,
   LogOut,
   MessageSquareText,
   ShieldCheck,
+  UserPlus,
   UserRound,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { apiUrl } from '../api'
 
+const props = defineProps({
+  initialMode: {
+    type: String,
+    default: 'login',
+  },
+})
+
+const route = useRoute()
 const router = useRouter()
 
 const mode = ref('login')
@@ -167,25 +171,70 @@ const message = ref('')
 const success = ref(false)
 const loading = ref(false)
 const currentUser = ref(null)
+const guestMode = ref(false)
+
+const isRegister = computed(() => mode.value === 'register')
 
 const helperText = computed(() => {
-  if (mode.value === 'login') {
+  if (!isRegister.value) {
     return '登录后会在本机保存访问令牌，用于恢复历史会话和区分管理员权限。'
   }
 
   return '注册仅需用户名和密码；请使用至少 6 位密码，注册后再登录。'
 })
 
+const introTitle = computed(() => (isRegister.value ? '注册普通用户账号' : '登录 AI 医疗 Agent 助手'))
+const introText = computed(() => (
+  isRegister.value
+    ? '创建账号后可保存个人对话、从历史记录继续咨询；也可以先用游客模式直接体验 AI 咨询。'
+    : '登录后可保存个人对话、从历史记录继续咨询；管理员账号可进入后台管理知识库、查看 Agent 调度日志。'
+))
+const cardKicker = computed(() => (isRegister.value ? '创建普通用户账号' : '欢迎回来'))
+const cardTitle = computed(() => (isRegister.value ? '注册账号' : '登录账号'))
+const alternatePath = computed(() => (isRegister.value ? '/login' : '/register'))
+const alternateText = computed(() => (isRegister.value ? '已有账号？去登录' : '还没有账号？去注册'))
+const sessionLabel = computed(() => {
+  if (currentUser.value?.role === 'admin') {
+    return '管理员'
+  }
+
+  if (currentUser.value) {
+    return '普通用户'
+  }
+
+  return '无需账号，可体验咨询功能'
+})
+const redirectPath = computed(() => {
+  const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+
+  if (redirect.startsWith('/') && !redirect.startsWith('//')) {
+    return redirect
+  }
+
+  return ''
+})
+
 const loadCurrentUser = () => {
   const raw = localStorage.getItem('ragUser')
   currentUser.value = raw ? JSON.parse(raw) : null
+  guestMode.value = !currentUser.value && localStorage.getItem('ragGuest') === 'true'
 }
 
-const setMode = (nextMode) => {
-  mode.value = nextMode
+const syncRouteState = () => {
+  mode.value = props.initialMode === 'register' ? 'register' : 'login'
   message.value = ''
   success.value = false
+  password.value = ''
   confirmPassword.value = ''
+
+  if (!isRegister.value && route.query.registered === '1') {
+    message.value = '注册成功，请使用刚才的账号登录。'
+    success.value = true
+  }
+
+  if (typeof route.query.username === 'string') {
+    username.value = route.query.username
+  }
 }
 
 const validateForm = () => {
@@ -201,7 +250,7 @@ const validateForm = () => {
     return '密码至少 6 位'
   }
 
-  if (mode.value === 'register' && password.value !== confirmPassword.value) {
+  if (isRegister.value && password.value !== confirmPassword.value) {
     return '两次输入的密码不一致'
   }
 
@@ -238,18 +287,27 @@ const submitForm = async () => {
     if (data.success && mode.value === 'login') {
       localStorage.setItem('ragUser', JSON.stringify(data.user))
       localStorage.setItem('ragToken', data.token)
+      localStorage.removeItem('ragGuest')
       window.dispatchEvent(new Event('rag-user-change'))
       currentUser.value = data.user
+      guestMode.value = false
 
-      router.push('/profile')
+      router.push(redirectPath.value || (data.user.role === 'admin' ? '/admin' : '/chat'))
     }
 
     if (data.success && mode.value === 'register') {
-      setMode('login')
+      const nextUsername = username.value
+      username.value = ''
       password.value = ''
       confirmPassword.value = ''
-      message.value = '注册成功，请使用刚才的账号登录。'
-      success.value = true
+      await router.push({
+        path: '/login',
+        query: {
+          registered: '1',
+          username: nextUsername,
+          ...(redirectPath.value ? { redirect: redirectPath.value } : {}),
+        },
+      })
     }
   } catch (error) {
     console.error(error)
@@ -260,9 +318,20 @@ const submitForm = async () => {
   }
 }
 
+const enterGuestMode = () => {
+  localStorage.removeItem('ragUser')
+  localStorage.removeItem('ragToken')
+  localStorage.setItem('ragGuest', 'true')
+  window.dispatchEvent(new Event('rag-user-change'))
+  currentUser.value = null
+  guestMode.value = true
+  router.push('/chat')
+}
+
 const logout = () => {
   localStorage.removeItem('ragUser')
   localStorage.removeItem('ragToken')
+  localStorage.removeItem('ragGuest')
   window.dispatchEvent(new Event('rag-user-change'))
   loadCurrentUser()
   message.value = '已退出登录'
@@ -272,6 +341,12 @@ const logout = () => {
 onMounted(() => {
   loadCurrentUser()
 })
+
+watch(
+  () => [props.initialMode, route.query.registered, route.query.username],
+  syncRouteState,
+  { immediate: true },
+)
 </script>
 
 <style scoped>
@@ -432,32 +507,6 @@ onMounted(() => {
   font-weight: 900;
 }
 
-.mode-switch {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
-  padding: 5px;
-  background: #f1f8fb;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.mode-switch button {
-  min-height: 40px;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 0;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 900;
-}
-
-.mode-switch button.active {
-  color: #ffffff;
-  background: var(--medical-blue);
-  box-shadow: 0 10px 18px rgba(37, 99, 235, 0.18);
-}
-
 .field {
   display: grid;
   gap: 8px;
@@ -570,6 +619,59 @@ onMounted(() => {
   color: #991b1b;
   background: #fef2f2;
   border: 1px solid #fecaca;
+}
+
+.auth-links {
+  display: flex;
+  justify-content: center;
+  margin-top: -2px;
+}
+
+.auth-links a {
+  color: var(--medical-blue);
+  text-decoration: none;
+  font-weight: 900;
+}
+
+.auth-links a:hover {
+  color: var(--medical-blue-dark);
+}
+
+.guest-divider {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.guest-divider::before,
+.guest-divider::after {
+  height: 1px;
+  content: "";
+  background: var(--border);
+}
+
+.guest-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 18px;
+  color: var(--pharmacy-teal);
+  background: #ecfdf5;
+  border: 1px solid #99f6e4;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.guest-btn:hover {
+  color: #0f766e;
+  background: #d1fae5;
 }
 
 @media (max-width: 900px) {

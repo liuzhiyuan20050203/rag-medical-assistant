@@ -30,7 +30,7 @@
             </div>
 
             <div v-if="!currentUser" class="session-empty">
-              登录后会自动保存历史会话，并可从这里继续对话。
+              {{ isGuest ? '游客模式可直接咨询，登录后可保存并继续历史会话。' : '登录后会自动保存历史会话，并可从这里继续对话。' }}
             </div>
             <div v-else-if="sessionsLoading" class="session-empty">
               正在加载历史会话...
@@ -223,6 +223,7 @@ const scrollToBottom = async () => {
 const {
   messages,
   currentUser,
+  isGuest,
   activeSessionId,
   conversationSessions,
   sessionsLoading,

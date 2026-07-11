@@ -1,490 +1,649 @@
 <template>
   <div class="profile-page">
-    <section v-if="!currentUser" class="profile-empty">
-      <div>
-        <span>尚未登录</span>
-        <h1>登录后查看个人中心</h1>
-        <p>登录后可以查看账号身份、继续历史会话，并进入 AI 助手保存新的咨询记录。</p>
-      </div>
+    <section class="profile-heading ui-page-heading">
+      <h2>个人设置</h2>
+      <p>管理头像、昵称、个人基本资料和账号密码。资料会用于右上角用户菜单和个人会话显示。</p>
+    </section>
 
-      <RouterLink class="primary-link" to="/login">去登录/注册</RouterLink>
+    <section v-if="!isLoggedIn" class="access-panel ui-card">
+      <div>
+        <span class="eyebrow">ACCOUNT REQUIRED</span>
+        <h3>请先登录账号</h3>
+        <p>游客可以直接体验咨询，但个人资料、头像和密码设置需要登录后使用。</p>
+      </div>
+      <div class="access-actions">
+        <RouterLink class="ui-button ui-button--primary" to="/login">去登录</RouterLink>
+        <RouterLink class="ui-button ui-button--soft" to="/register">注册账号</RouterLink>
+      </div>
     </section>
 
     <template v-else>
-      <section class="profile-hero">
-        <div class="avatar" aria-hidden="true">{{ userInitial }}</div>
+      <section class="profile-summary ui-card">
+        <div class="avatar-preview">
+          <img v-if="profile.avatar" :src="profile.avatar" alt="当前头像" />
+          <span v-else>{{ avatarText }}</span>
+        </div>
         <div>
-          <span class="eyebrow">个人中心</span>
-          <h1>{{ currentUser.username }}</h1>
-          <p>{{ roleLabel }} · 登录后会自动保存 AI 助手对话和历史咨询记录。</p>
-        </div>
-
-        <button type="button" class="logout-btn" @click="logout">
-          <LogOut :size="18" aria-hidden="true" />
-          退出登录
-        </button>
-      </section>
-
-      <section class="profile-grid">
-        <div class="profile-card account-card">
-          <div class="card-title">
-            <UserRound :size="20" aria-hidden="true" />
-            <strong>账号信息</strong>
-          </div>
-
-          <dl>
-            <div>
-              <dt>用户名</dt>
-              <dd>{{ currentUser.username }}</dd>
-            </div>
-            <div>
-              <dt>身份</dt>
-              <dd>{{ roleLabel }}</dd>
-            </div>
-            <div>
-              <dt>历史会话</dt>
-              <dd>{{ conversationSessions.length }} 个</dd>
-            </div>
-            <div>
-              <dt>消息记录</dt>
-              <dd>{{ totalMessages }} 条</dd>
-            </div>
-          </dl>
-        </div>
-
-        <div class="profile-card action-card">
-          <div class="card-title">
-            <Sparkles :size="20" aria-hidden="true" />
-            <strong>常用入口</strong>
-          </div>
-
-          <div class="quick-actions">
-            <RouterLink to="/chat">
-              <MessageSquareText :size="19" aria-hidden="true" />
-              AI 助手
-            </RouterLink>
-            <RouterLink to="/history">
-              <History :size="19" aria-hidden="true" />
-              历史记录
-            </RouterLink>
-            <RouterLink to="/knowledge">
-              <BookOpenText :size="19" aria-hidden="true" />
-              知识库
-            </RouterLink>
-            <RouterLink v-if="currentUser.role === 'admin'" to="/admin">
-              <ShieldCheck :size="19" aria-hidden="true" />
-              管理后台
-            </RouterLink>
-          </div>
+          <span class="eyebrow">MY ACCOUNT</span>
+          <h3>{{ profile.display_name || profile.username }}</h3>
+          <p>{{ profile.role === 'admin' ? '管理员账号' : '普通用户账号' }} · {{ profile.username }}</p>
         </div>
       </section>
 
-      <section class="profile-card sessions-card">
-        <div class="section-head">
-          <div class="card-title">
-            <History :size="20" aria-hidden="true" />
-            <strong>最近会话</strong>
+      <section class="settings-grid">
+        <form class="settings-panel ui-card" @submit.prevent="saveProfile">
+          <div class="panel-title">
+            <div>
+              <h3>头像与基本资料</h3>
+              <p>修改后会立即同步到右上角用户菜单。</p>
+            </div>
           </div>
 
-          <button type="button" :disabled="sessionsLoading" @click="loadConversationSessions(true)">
-            <RefreshCw :size="16" aria-hidden="true" />
-            {{ sessionsLoading ? '刷新中' : '刷新' }}
+          <div class="avatar-editor">
+            <div class="avatar-preview large">
+              <img v-if="profile.avatar" :src="profile.avatar" alt="待保存头像" />
+              <span v-else>{{ avatarText }}</span>
+            </div>
+
+            <div class="avatar-actions">
+              <input
+                ref="avatarInputRef"
+                type="file"
+                accept="image/*"
+                class="sr-only"
+                @change="handleAvatarFile"
+              />
+              <button type="button" class="ui-button ui-button--soft" @click="avatarInputRef?.click()">
+                <Upload :size="17" aria-hidden="true" />
+                更改头像
+              </button>
+              <button type="button" class="ui-button" :disabled="!profile.avatar" @click="clearAvatar">
+                <Trash2 :size="17" aria-hidden="true" />
+                清除头像
+              </button>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <label class="field">
+              <span>用户名</span>
+              <input v-model.trim="profile.username" class="ui-field" autocomplete="username" />
+            </label>
+
+            <label class="field">
+              <span>昵称</span>
+              <input v-model.trim="profile.display_name" class="ui-field" placeholder="用于页面展示的名字" />
+            </label>
+
+            <label class="field">
+              <span>真实姓名</span>
+              <input v-model.trim="profile.real_name" class="ui-field" placeholder="选填" />
+            </label>
+
+            <label class="field">
+              <span>邮箱</span>
+              <input v-model.trim="profile.email" class="ui-field" type="email" placeholder="name@example.com" />
+            </label>
+
+            <label class="field">
+              <span>电话</span>
+              <input v-model.trim="profile.phone" class="ui-field" inputmode="tel" placeholder="选填" />
+            </label>
+
+            <label class="field">
+              <span>性别</span>
+              <select v-model="profile.gender" class="ui-field">
+                <option value="">不填写</option>
+                <option value="男">男</option>
+                <option value="女">女</option>
+                <option value="其他">其他</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>生日</span>
+              <input v-model="profile.birthday" class="ui-field" type="date" />
+            </label>
+
+            <label class="field field-wide">
+              <span>个人简介</span>
+              <textarea
+                v-model.trim="profile.bio"
+                class="ui-textarea"
+                maxlength="200"
+                placeholder="可以写一点个人说明，最多 200 字。"
+              ></textarea>
+            </label>
+          </div>
+
+          <p v-if="profileStatus" :class="['status-message', profileSuccess ? 'success' : 'error']">
+            {{ profileStatus }}
+          </p>
+
+          <button class="ui-button ui-button--primary save-btn" type="submit" :disabled="profileSaving">
+            <Save :size="17" aria-hidden="true" />
+            {{ profileSaving ? '保存中...' : '保存资料' }}
           </button>
-        </div>
+        </form>
 
-        <p v-if="sessionsStatus" class="status-text">{{ sessionsStatus }}</p>
+        <form class="settings-panel ui-card" @submit.prevent="changePassword">
+          <div class="panel-title">
+            <div>
+              <h3>修改密码</h3>
+              <p>密码至少 6 位，修改后当前登录状态仍会保留。</p>
+            </div>
+          </div>
 
-        <div v-if="sessionsLoading" class="empty-line">正在加载最近会话...</div>
-        <div v-else-if="conversationSessions.length === 0" class="empty-line">
-          暂无历史会话。去 AI 助手发送第一条消息后，这里会自动显示。
-        </div>
-        <div v-else class="session-list">
-          <RouterLink
-            v-for="session in recentSessions"
-            :key="session.id"
-            :to="{ path: '/chat', query: { session_id: session.id } }"
-          >
-            <span>{{ session.title || `会话 #${session.id}` }}</span>
-            <small>{{ session.message_count || 0 }} 条消息</small>
-          </RouterLink>
-        </div>
+          <label class="field">
+            <span>当前密码</span>
+            <input v-model="passwordForm.oldPassword" class="ui-field" type="password" autocomplete="current-password" />
+          </label>
+
+          <label class="field">
+            <span>新密码</span>
+            <input v-model="passwordForm.newPassword" class="ui-field" type="password" autocomplete="new-password" />
+          </label>
+
+          <label class="field">
+            <span>确认新密码</span>
+            <input v-model="passwordForm.confirmPassword" class="ui-field" type="password" autocomplete="new-password" />
+          </label>
+
+          <p v-if="passwordStatus" :class="['status-message', passwordSuccess ? 'success' : 'error']">
+            {{ passwordStatus }}
+          </p>
+
+          <button class="ui-button ui-button--primary save-btn" type="submit" :disabled="passwordSaving">
+            <KeyRound :size="17" aria-hidden="true" />
+            {{ passwordSaving ? '修改中...' : '修改密码' }}
+          </button>
+        </form>
       </section>
     </template>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import {
-  BookOpenText,
-  History,
-  LogOut,
-  MessageSquareText,
-  RefreshCw,
-  ShieldCheck,
-  Sparkles,
-  UserRound,
-} from 'lucide-vue-next'
-import { cachedGetJson, clearPageCacheByPrefix } from '../api'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { KeyRound, Save, Trash2, Upload } from '@lucide/vue'
+import { apiUrl } from '../api'
 
+const route = useRoute()
 const router = useRouter()
+const avatarInputRef = ref(null)
+const isLoggedIn = ref(false)
+const profileSaving = ref(false)
+const passwordSaving = ref(false)
+const profileStatus = ref('')
+const passwordStatus = ref('')
+const profileSuccess = ref(false)
+const passwordSuccess = ref(false)
 
-const currentUser = ref(null)
-const conversationSessions = ref([])
-const sessionsLoading = ref(false)
-const sessionsStatus = ref('')
-
-const userInitial = computed(() => currentUser.value?.username?.slice(0, 1)?.toUpperCase() || '用')
-const roleLabel = computed(() => currentUser.value?.role === 'admin' ? '管理员' : '普通用户')
-const recentSessions = computed(() => conversationSessions.value.slice(0, 5))
-const totalMessages = computed(() => conversationSessions.value.reduce(
-  (sum, session) => sum + Number(session.message_count || 0),
-  0,
-))
-
-const authHeaders = () => ({
-  Authorization: `Bearer ${localStorage.getItem('ragToken') || ''}`,
+const emptyProfile = () => ({
+  username: '',
+  display_name: '',
+  real_name: '',
+  email: '',
+  phone: '',
+  gender: '',
+  birthday: '',
+  bio: '',
+  avatar: '',
+  role: 'user',
 })
 
-const profileSessionsCacheKey = () => {
-  const userKey = currentUser.value?.id || currentUser.value?.username || 'guest'
-  return `profile:sessions:${userKey}`
+const profile = reactive(emptyProfile())
+const passwordForm = reactive({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: '',
+})
+
+const avatarText = computed(() => {
+  const text = profile.display_name || profile.username || '用户'
+  return text.slice(0, 2).toUpperCase()
+})
+
+const authHeaders = (extra = {}) => {
+  const token = localStorage.getItem('ragToken') || ''
+
+  return token
+    ? {
+        ...extra,
+        Authorization: `Bearer ${token}`,
+      }
+    : { ...extra }
 }
 
-const loadCurrentUser = () => {
-  const raw = localStorage.getItem('ragUser')
-  currentUser.value = raw ? JSON.parse(raw) : null
+const syncUser = (user) => {
+  if (!user) return
+  localStorage.setItem('ragUser', JSON.stringify(user))
+  localStorage.removeItem('ragGuest')
+  window.dispatchEvent(new Event('rag-user-change'))
 }
 
-const loadConversationSessions = async (force = false) => {
-  if (!currentUser.value) return
+const fillProfile = (user = {}) => {
+  Object.assign(profile, emptyProfile(), user)
+  profile.display_name = profile.display_name || profile.username
+}
 
-  sessionsLoading.value = true
-  sessionsStatus.value = ''
+const loadProfile = async () => {
+  const token = localStorage.getItem('ragToken')
+  const rawUser = localStorage.getItem('ragUser')
+
+  isLoggedIn.value = Boolean(token && rawUser)
+
+  if (!isLoggedIn.value) {
+    router.replace({
+      path: '/login',
+      query: {
+        redirect: route.fullPath,
+      },
+    })
+    return
+  }
+
+  if (rawUser) {
+    try {
+      fillProfile(JSON.parse(rawUser))
+    } catch (error) {
+      console.error(error)
+    }
+  }
 
   try {
-    const data = await cachedGetJson(
-      profileSessionsCacheKey(),
-      '/api/conversations/sessions',
-      {
-        force,
-        fetchOptions: {
-          headers: authHeaders(),
-        },
-      },
-    )
+    const response = await fetch(apiUrl('/api/auth/me'), {
+      headers: authHeaders(),
+    })
+    const data = await response.json()
 
-    if (!Array.isArray(data.data)) {
-      conversationSessions.value = []
-      sessionsStatus.value = data.message || '最近会话加载失败。'
+    if (!response.ok || !data.success) {
+      localStorage.removeItem('ragUser')
+      localStorage.removeItem('ragToken')
+      window.dispatchEvent(new Event('rag-user-change'))
+      router.replace({
+        path: '/login',
+        query: {
+          redirect: route.fullPath,
+        },
+      })
       return
     }
 
-    conversationSessions.value = data.data || []
-    sessionsStatus.value = data.message || ''
+    fillProfile(data.user)
+    syncUser(data.user)
   } catch (error) {
+    profileStatus.value = '个人资料加载失败，请检查后端服务。'
+    profileSuccess.value = false
     console.error(error)
-    conversationSessions.value = []
-    sessionsStatus.value = '最近会话加载失败，请检查后端服务。'
-  } finally {
-    sessionsLoading.value = false
   }
 }
 
-const logout = () => {
-  clearPageCacheByPrefix('profile:')
-  localStorage.removeItem('ragUser')
-  localStorage.removeItem('ragToken')
-  window.dispatchEvent(new Event('rag-user-change'))
-  currentUser.value = null
-  router.push('/login')
+const resizeAvatar = (file, size = 240, quality = 0.82) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const image = new window.Image()
+      image.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = size
+        canvas.height = size
+        const context = canvas.getContext('2d')
+        const scale = Math.max(size / image.width, size / image.height)
+        const width = image.width * scale
+        const height = image.height * scale
+        const x = (size - width) / 2
+        const y = (size - height) / 2
+        context.drawImage(image, x, y, width, height)
+        resolve(canvas.toDataURL('image/jpeg', quality))
+      }
+      image.onerror = () => reject(new Error('图片解码失败'))
+      image.src = String(reader.result || '')
+    }
+    reader.onerror = () => reject(new Error('图片读取失败'))
+    reader.readAsDataURL(file)
+  })
+
+const handleAvatarFile = async (event) => {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+
+  if (!file) return
+
+  if (!String(file.type || '').startsWith('image/')) {
+    profileStatus.value = '请选择图片文件作为头像。'
+    profileSuccess.value = false
+    return
+  }
+
+  try {
+    profile.avatar = await resizeAvatar(file)
+    profileStatus.value = '头像已更新预览，保存后生效。'
+    profileSuccess.value = true
+  } catch (error) {
+    profileStatus.value = error.message || '头像处理失败，请重新选择图片。'
+    profileSuccess.value = false
+  }
+}
+
+const clearAvatar = () => {
+  profile.avatar = ''
+  profileStatus.value = '头像已清除，保存后生效。'
+  profileSuccess.value = true
+}
+
+const validateProfile = () => {
+  if (!profile.username.trim() || profile.username.trim().length < 3) {
+    return '用户名至少 3 位。'
+  }
+
+  if (!profile.display_name.trim()) {
+    return '请填写昵称。'
+  }
+
+  return ''
+}
+
+const saveProfile = async () => {
+  const validationMessage = validateProfile()
+  if (validationMessage) {
+    profileStatus.value = validationMessage
+    profileSuccess.value = false
+    return
+  }
+
+  profileSaving.value = true
+  profileStatus.value = ''
+
+  try {
+    const response = await fetch(apiUrl('/api/auth/profile'), {
+      method: 'PUT',
+      headers: authHeaders({
+        'Content-Type': 'application/json',
+      }),
+      body: JSON.stringify(profile),
+    })
+    const data = await response.json()
+
+    profileStatus.value = data.message || (data.success ? '个人资料已保存。' : '个人资料保存失败。')
+    profileSuccess.value = Boolean(data.success)
+
+    if (data.success && data.user) {
+      fillProfile(data.user)
+      syncUser(data.user)
+    }
+  } catch (error) {
+    profileStatus.value = '保存失败，请检查后端服务。'
+    profileSuccess.value = false
+    console.error(error)
+  } finally {
+    profileSaving.value = false
+  }
+}
+
+const changePassword = async () => {
+  if (!passwordForm.oldPassword || !passwordForm.newPassword) {
+    passwordStatus.value = '请填写当前密码和新密码。'
+    passwordSuccess.value = false
+    return
+  }
+
+  if (passwordForm.newPassword.length < 6) {
+    passwordStatus.value = '新密码至少 6 位。'
+    passwordSuccess.value = false
+    return
+  }
+
+  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+    passwordStatus.value = '两次输入的新密码不一致。'
+    passwordSuccess.value = false
+    return
+  }
+
+  passwordSaving.value = true
+  passwordStatus.value = ''
+
+  try {
+    const response = await fetch(apiUrl('/api/auth/password'), {
+      method: 'PUT',
+      headers: authHeaders({
+        'Content-Type': 'application/json',
+      }),
+      body: JSON.stringify({
+        old_password: passwordForm.oldPassword,
+        new_password: passwordForm.newPassword,
+      }),
+    })
+    const data = await response.json()
+
+    passwordStatus.value = data.message || (data.success ? '密码已修改。' : '密码修改失败。')
+    passwordSuccess.value = Boolean(data.success)
+
+    if (data.success) {
+      passwordForm.oldPassword = ''
+      passwordForm.newPassword = ''
+      passwordForm.confirmPassword = ''
+      if (data.user) {
+        syncUser(data.user)
+      }
+    }
+  } catch (error) {
+    passwordStatus.value = '修改失败，请检查后端服务。'
+    passwordSuccess.value = false
+    console.error(error)
+  } finally {
+    passwordSaving.value = false
+  }
 }
 
 onMounted(() => {
-  loadCurrentUser()
-  loadConversationSessions()
+  loadProfile()
 })
 </script>
 
 <style scoped>
 .profile-page {
   display: grid;
-  gap: 18px;
+  gap: 20px;
 }
 
-.profile-empty,
-.profile-hero,
-.profile-card {
-  background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
+.profile-heading {
+  margin-bottom: 0;
 }
 
-.profile-empty {
+.access-panel,
+.profile-summary,
+.settings-panel {
+  padding: 24px;
+}
+
+.access-panel {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  padding: clamp(22px, 4vw, 34px);
+  gap: 22px;
 }
 
-.profile-empty span,
-.eyebrow,
-dt,
-.status-text,
-.empty-line {
-  color: var(--text-muted);
-}
-
-.profile-empty h1,
-.profile-hero h1 {
-  margin-top: 4px;
+.access-panel h3,
+.profile-summary h3,
+.panel-title h3 {
   color: var(--text-primary);
-  font-size: clamp(28px, 4vw, 42px);
+  font-size: 24px;
   font-weight: 900;
-  line-height: 1.2;
 }
 
-.profile-empty p,
-.profile-hero p {
-  margin-top: 8px;
+.access-panel p,
+.profile-summary p,
+.panel-title p {
+  margin-top: 6px;
   color: var(--text-secondary);
-  line-height: 1.8;
+  line-height: 1.75;
 }
 
-.primary-link,
-.logout-btn,
-.section-head button,
-.quick-actions a {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  min-height: 42px;
-  padding: 0 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 900;
-  text-decoration: none;
-}
-
-.primary-link,
-.quick-actions a:first-child {
-  color: #ffffff;
-  background: var(--medical-blue);
-}
-
-.profile-hero {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 16px;
-  align-items: center;
-  padding: clamp(20px, 4vw, 32px);
-}
-
-.avatar {
-  display: grid;
-  width: 68px;
-  height: 68px;
-  place-items: center;
-  color: #ffffff;
-  background: linear-gradient(135deg, var(--medical-blue), var(--clinical-green));
-  border-radius: 8px;
-  font-size: 30px;
-  font-weight: 900;
+.access-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .eyebrow {
+  color: var(--pharmacy-teal);
   font-size: 12px;
   font-weight: 900;
+  letter-spacing: 0;
 }
 
-.logout-btn {
-  color: #991b1b;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+.profile-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
-.profile-grid {
+.avatar-preview {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.8fr);
+  flex: 0 0 auto;
+  width: 70px;
+  height: 70px;
+  place-items: center;
+  overflow: hidden;
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--medical-blue), var(--clinical-green));
+  border-radius: 999px;
+  font-size: 22px;
+  font-weight: 900;
+  box-shadow: 0 14px 26px rgba(37, 99, 235, 0.18);
+}
+
+.avatar-preview.large {
+  width: 96px;
+  height: 96px;
+  font-size: 30px;
+}
+
+.avatar-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.settings-panel {
+  display: grid;
   gap: 18px;
 }
 
-.profile-card {
-  padding: 18px;
+.panel-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
 }
 
-.card-title,
-.section-head {
+.avatar-editor {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.section-head {
-  justify-content: space-between;
-  margin-bottom: 14px;
-}
-
-.card-title {
-  color: var(--text-primary);
-}
-
-.card-title svg {
-  color: var(--medical-blue);
-}
-
-dl {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin: 16px 0 0;
-}
-
-dl div {
-  padding: 12px;
-  background: #f8fafc;
-  border: 1px solid var(--border);
+  gap: 18px;
+  padding: 16px;
+  background: #f8fbfd;
+  border: 1px solid #e4edf3;
   border-radius: 8px;
 }
 
-dt {
-  font-size: 12px;
-  font-weight: 900;
-}
-
-dd {
-  margin: 4px 0 0;
-  color: var(--text-primary);
-  font-size: 18px;
-  font-weight: 900;
-}
-
-.quick-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.quick-actions a {
-  color: var(--text-secondary);
-  background: #f8fafc;
-  border: 1px solid var(--border);
-}
-
-.quick-actions a:hover {
-  color: var(--medical-blue);
-  background: #eff6ff;
-  border-color: #bfdbfe;
-}
-
-.quick-actions a:first-child:hover {
-  color: #ffffff;
-  background: var(--medical-blue-dark);
-  border-color: var(--medical-blue-dark);
-}
-
-.section-head button {
-  color: var(--text-secondary);
-  background: #f8fafc;
-  border: 1px solid var(--border);
-}
-
-.section-head button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.status-text,
-.empty-line {
-  margin: 0;
-  padding: 12px;
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  line-height: 1.7;
-}
-
-.session-list {
-  display: grid;
+.avatar-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
-.session-list a {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 50px;
-  padding: 10px 12px;
-  color: var(--text-primary);
-  text-decoration: none;
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+.avatar-actions .ui-button,
+.save-btn {
+  gap: 7px;
 }
 
-.session-list a:hover {
-  color: var(--medical-blue);
-  background: #eff6ff;
-  border-color: #bfdbfe;
-}
-
-.session-list span,
-.session-list small {
-  min-width: 0;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  border: 0;
+  clip: rect(0 0 0 0);
 }
 
-.session-list span {
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.field {
+  display: grid;
+  gap: 7px;
+  color: var(--text-primary);
   font-weight: 900;
 }
 
-.session-list small {
-  color: var(--text-muted);
-  font-size: 12px;
+.field span {
+  font-size: 14px;
+}
+
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+.field select {
+  appearance: none;
+}
+
+.status-message {
+  padding: 11px 12px;
+  border-radius: 8px;
   font-weight: 800;
 }
 
-@media (max-width: 820px) {
-  .profile-hero,
-  .profile-grid {
+.status-message.success {
+  color: var(--success-text);
+  background: var(--success-soft);
+  border: 1px solid var(--success-border);
+}
+
+.status-message.error {
+  color: #991b1b;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+}
+
+.save-btn {
+  justify-self: start;
+  min-height: 42px;
+}
+
+@media (max-width: 980px) {
+  .settings-grid {
     grid-template-columns: 1fr;
   }
 
-  .profile-empty,
-  .profile-hero {
-    align-items: flex-start;
-  }
-
-  .logout-btn {
-    width: fit-content;
-  }
-}
-
-@media (max-width: 560px) {
-  .profile-empty,
-  .section-head,
-  .session-list a {
+  .access-panel,
+  .profile-summary,
+  .avatar-editor {
     align-items: flex-start;
     flex-direction: column;
   }
+}
 
-  dl,
-  .quick-actions {
+@media (max-width: 640px) {
+  .form-grid {
     grid-template-columns: 1fr;
-  }
-
-  .primary-link,
-  .logout-btn,
-  .section-head button {
-    width: 100%;
   }
 }
 </style>
