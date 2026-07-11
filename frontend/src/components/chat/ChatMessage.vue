@@ -2,6 +2,7 @@
   <article :class="['message', `${message.role}-message`]">
     <div class="avatar">{{ message.role === 'user' ? '我' : 'AI' }}</div>
     <div class="bubble">
+      <!-- Loading state -->
       <div v-if="message.type === 'loading'" class="loading-card">
         <div class="typing">
           <span></span>
@@ -20,24 +21,36 @@
         </div>
       </div>
 
+      <!-- Content state -->
       <template v-else>
+        <!-- 1. 紧急安全提醒 (最优先，置于最顶部，使用强层级红色视觉) -->
+        <div
+          v-if="message.role === 'assistant' && message.warning?.has_warning"
+          class="emergency-warning-card"
+        >
+          <div class="emergency-header">
+            <svg viewBox="0 0 24 24" class="emergency-icon" aria-hidden="true">
+              <path d="M12 2L1 21h22L12 2zm1 14h-2v-2h2v2zm0-4h-2V8h2v4z" fill="currentColor"/>
+            </svg>
+            <strong>检测到疑似紧急危险症状</strong>
+          </div>
+          <p class="emergency-body">{{ message.warning.message }}</p>
+          <div v-if="message.warning.matched?.length" class="emergency-tags">
+            <span v-for="item in message.warning.matched" :key="item">{{ item }}</span>
+          </div>
+          <div class="emergency-action">
+            <a href="tel:120" class="emergency-call-btn">立即联系急救服务或前往就近医疗机构</a>
+          </div>
+        </div>
+
+        <!-- 2. AI 主要回答文本 (以文档卡片样式展示) -->
         <div v-if="message.title || message.content" class="answer-content">
-          <strong v-if="message.title">{{ message.title }}</strong>
+          <strong v-if="message.title" class="answer-title">{{ message.title }}</strong>
           <pre v-if="message.content">{{ message.content }}</pre>
         </div>
 
+        <!-- 3. AI 结构化临床辅助面板 -->
         <div v-if="message.role === 'assistant' && hasClinicalPanels" class="assistant-panels">
-          <div v-if="message.warning?.has_warning" class="message-panel warning-panel">
-            <div class="panel-heading">
-              <span>危险提醒</span>
-              <b>优先处理</b>
-            </div>
-            <p>{{ message.warning.message }}</p>
-            <div class="tag-list">
-              <span v-for="item in message.warning.matched" :key="item">{{ item }}</span>
-            </div>
-          </div>
-
           <ReliabilityNote
             v-if="message.reliability"
             :reliability="message.reliability"
@@ -45,9 +58,10 @@
 
           <SourceList v-if="message.docs?.length" :docs="message.docs" />
 
+          <!-- 建议补充选项 -->
           <div v-if="message.followups?.length" class="message-panel followup-panel">
             <div class="panel-heading">
-              <span>建议补充</span>
+              <span>建议补充描述</span>
               <b>{{ message.followups.length }} 项</b>
             </div>
             <div class="followup-list">
@@ -63,9 +77,10 @@
           </div>
         </div>
 
+        <!-- 4. 反馈区 -->
         <div v-if="message.role === 'assistant' && message.historyId" class="message-panel feedback-panel">
           <div class="panel-heading">
-            <span>{{ message.feedbackStatus || '这次回答有帮助吗？' }}</span>
+            <span>{{ message.feedbackStatus || '这次回答对您有帮助吗？' }}</span>
           </div>
           <div class="feedback-actions">
             <button
@@ -81,27 +96,31 @@
           </div>
         </div>
 
+        <!-- 5. 调试 Agent Trace -->
         <AgentTracePanel v-if="isAdmin && message.trace" :message="message" />
 
+        <!-- 6. 异常提示 -->
         <div v-if="isAdmin && message.error" class="error-box">
           <strong>Agent 处理异常</strong>
           <p>{{ message.error.message }}</p>
           <span>{{ message.error.type }}</span>
         </div>
 
+        <!-- 7. 工具条动作 -->
         <div v-if="interactive && message.role === 'assistant'" class="message-actions">
           <span
             v-if="message.llm"
             :class="['llm-badge', message.llm.used ? 'llm-on' : 'llm-off']"
           >
-            {{ message.llm.used ? `AI 大模型参与：${message.llm.model || message.llm.provider || '已启用'}` : '本地知识库模板回答' }}
+            {{ message.llm.used ? `AI 大模型参与：${message.llm.model || message.llm.provider || '已启用'}` : '本地知识库回答' }}
           </span>
           <button
             v-if="speechSynthesisSupported"
             type="button"
+            class="speak-btn"
             @click="$emit('toggle-speak', message)"
           >
-            {{ speakingMessageId === message.id ? '停止朗读' : '朗读回答' }}
+            {{ speakingMessageId === message.id ? '停止播放语音' : '播放语音' }}
           </button>
         </div>
       </template>
@@ -164,8 +183,7 @@ const currentLoadingIndex = computed(() => {
 const loadingStageLabel = computed(() => visibleLoadingStages.value[currentLoadingIndex.value]?.label || '正在分析你的描述')
 
 const hasClinicalPanels = computed(() => Boolean(
-  props.message.warning?.has_warning
-  || props.message.reliability
+  props.message.reliability
   || props.message.docs?.length
   || props.message.followups?.length,
 ))
@@ -174,71 +192,182 @@ const hasClinicalPanels = computed(() => Boolean(
 <style scoped>
 .message {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  gap: 12px;
-  max-width: 860px;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 16px;
+  width: min(100%, 980px);
+  align-self: flex-start;
+  margin-bottom: 24px;
 }
 
 .user-message {
+  width: fit-content;
   align-self: flex-end;
   grid-template-columns: minmax(0, 1fr) 42px;
-  max-width: 720px;
+  max-width: min(82%, 760px);
 }
 
 .user-message .avatar {
   grid-column: 2;
   grid-row: 1;
+  background: var(--primary);
 }
 
 .user-message .bubble {
   grid-column: 1;
   grid-row: 1;
-  color: #ffffff;
-  background: var(--medical-blue);
-  border-color: var(--medical-blue);
+  color: var(--text-primary);
+  background: var(--surface-container-high);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-xs) var(--radius-lg);
+  padding: 16px 20px;
+  font-size: 18px;
+  line-height: 1.75;
+  box-shadow: var(--shadow-sm);
 }
 
 .avatar {
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   place-items: center;
   color: #ffffff;
-  background: linear-gradient(135deg, var(--medical-blue), var(--clinical-green));
-  border-radius: 8px;
+  background: linear-gradient(135deg, var(--primary), var(--teal-bright));
+  border-radius: 50%;
   font-weight: 800;
+  font-size: 14px;
+  box-shadow: var(--shadow-sm);
 }
 
 .bubble {
-  padding: 14px 16px;
-  background: #ffffff;
+  min-width: 0;
+}
+
+.assistant-message .bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+/* AI回答卡片样式 */
+.answer-content {
+  position: relative;
+  padding: 24px 28px;
+  overflow: hidden;
+  background: rgba(0, 80, 203, 0.035);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.answer-content strong {
+.answer-content:hover {
+  border-color: #b3c5ff;
+  border-left-color: var(--primary);
+  box-shadow: 0 8px 24px rgba(0, 80, 203, 0.07);
+}
+
+.answer-title {
   display: block;
-  margin-bottom: 6px;
-}
-
-.answer-content p,
-.message-panel p {
-  margin: 0;
-  line-height: 1.8;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--primary);
+  margin-bottom: 12px;
 }
 
 pre {
   margin: 0;
-  color: inherit;
+  color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
-  line-height: 1.75;
+  font-size: 18px;
+  line-height: 1.85;
+}
+
+/* 紧急红色危险卡片 */
+.emergency-warning-card {
+  padding: 18px 22px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  border-left: 5px solid var(--danger);
+  border-radius: 12px;
+  color: #7f1d1d;
+  box-shadow: var(--shadow-sm);
+}
+
+.emergency-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.emergency-icon {
+  width: 22px;
+  height: 22px;
+  color: var(--danger);
+}
+
+.emergency-body {
+  font-size: 15px;
+  line-height: 1.6;
+  margin: 0 0 12px 0;
+  font-weight: 600;
+}
+
+.emergency-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.emergency-tags span {
+  padding: 2px 8px;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  color: var(--danger);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.emergency-action {
+  display: flex;
+}
+
+.emergency-call-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 16px;
+  background: var(--danger);
+  color: #ffffff !important;
+  border-radius: 10px;
+  text-decoration: none;
+  font-weight: 800;
+  font-size: 14px;
+  transition: background-color 0.2s ease;
+}
+
+.emergency-call-btn:hover {
+  background: #b91c1c;
 }
 
 .loading-card {
+  padding: 18px 22px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
   display: grid;
   gap: 12px;
+  max-width: 500px;
 }
 
 .typing {
@@ -252,8 +381,8 @@ pre {
 .typing span {
   width: 7px;
   height: 7px;
-  background: var(--medical-blue);
-  border-radius: 999px;
+  background: var(--primary);
+  border-radius: 50%;
   animation: pulse 1s ease-in-out infinite;
 }
 
@@ -276,7 +405,7 @@ pre {
   min-height: 28px;
   place-items: center;
   color: var(--text-muted);
-  background: #f8fafc;
+  background: var(--surface-soft);
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 12px;
@@ -284,24 +413,22 @@ pre {
 }
 
 .loading-steps span.done {
-  color: #0f766e;
-  background: #ecfdf5;
+  color: var(--teal);
+  background: var(--teal-soft);
   border-color: #99f6e4;
 }
 
 .loading-steps span.active {
   color: #ffffff;
-  background: var(--medical-blue);
-  border-color: var(--medical-blue);
+  background: var(--primary);
+  border-color: var(--primary);
 }
 
 @keyframes pulse {
-  0%,
-  100% {
+  0%, 100% {
     opacity: 0.3;
     transform: translateY(0);
   }
-
   50% {
     opacity: 1;
     transform: translateY(-3px);
@@ -309,18 +436,19 @@ pre {
 }
 
 .assistant-panels {
-  display: grid;
-  gap: 10px;
-  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .message-panel {
   display: grid;
   gap: 8px;
-  padding: 12px;
-  background: #f8fafc;
+  padding: 16px;
+  background: #ffffff;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
 }
 
 .panel-heading {
@@ -332,105 +460,71 @@ pre {
 
 .panel-heading span {
   color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 900;
+  font-size: 14px;
+  font-weight: 800;
 }
 
 .panel-heading b {
-  flex: 0 0 auto;
   padding: 2px 8px;
   color: var(--text-muted);
-  background: #ffffff;
+  background: var(--surface-soft);
   border: 1px solid var(--border);
   border-radius: 999px;
   font-size: 11px;
-  font-weight: 900;
-}
-
-.warning-panel {
-  color: #991b1b;
-  background: #fff7ed;
-  border-color: #fed7aa;
-}
-
-.warning-panel .panel-heading span {
-  color: #9a3412;
-}
-
-.warning-panel .panel-heading b {
-  color: #ffffff;
-  background: #dc2626;
-  border-color: #dc2626;
-}
-
-.error-box {
-  margin-top: 14px;
-  padding: 14px;
-  color: #991b1b;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
-}
-
-.error-box strong {
-  margin-bottom: 4px;
-}
-
-.tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.tag-list span {
-  padding: 4px 9px;
-  color: #ffffff;
-  background: #dc2626;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .followup-list {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
 .followup-list button {
-  padding: 10px 12px;
-  color: #1d4ed8;
+  padding: 10px 14px;
+  color: var(--primary);
   text-align: left;
-  background: #eff6ff;
+  background: var(--primary-soft);
   border: 1px solid #bfdbfe;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.followup-list button:hover {
+  background: #dbeafe;
 }
 
 .message-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+  margin-top: 4px;
 }
 
-.message-actions button {
-  min-height: 34px;
+.speak-btn {
+  min-height: 32px;
   padding: 0 12px;
-  color: #0f766e;
-  background: #ecfdf5;
+  color: var(--teal);
+  background: var(--teal-soft);
   border: 1px solid #99f6e4;
   border-radius: 8px;
   cursor: pointer;
   font-weight: 800;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.speak-btn:hover {
+  background: #ccfbf1;
 }
 
 .llm-badge {
   display: inline-flex;
   align-items: center;
-  min-height: 34px;
+  min-height: 32px;
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -439,19 +533,19 @@ pre {
 }
 
 .llm-on {
-  color: #166534;
-  background: #f0fdf4;
-  border-color: #bbf7d0;
+  color: var(--success-text);
+  background: var(--success-soft);
+  border-color: var(--success-border);
 }
 
 .llm-off {
-  color: #92400e;
-  background: #fffbeb;
-  border-color: #fde68a;
+  color: var(--warning-text);
+  background: var(--warning-soft);
+  border-color: var(--warning-border);
 }
 
 .feedback-panel {
-  margin-top: 10px;
+  border-radius: 16px;
 }
 
 .feedback-actions {
@@ -462,21 +556,22 @@ pre {
 
 .feedback-actions button {
   min-height: 32px;
-  padding: 0 10px;
+  padding: 0 12px;
   color: var(--text-secondary);
-  background: #f8fafc;
+  background: var(--surface-soft);
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
   font-weight: 800;
+  transition: all 0.2s ease;
 }
 
 .feedback-actions button:hover:not(:disabled),
 .feedback-actions button.active {
-  color: #1d4ed8;
-  background: #eff6ff;
-  border-color: #93c5fd;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-color: var(--primary);
 }
 
 .feedback-actions button:disabled {
@@ -484,10 +579,25 @@ pre {
   cursor: not-allowed;
 }
 
+.error-box {
+  margin-top: 14px;
+  padding: 16px;
+  color: #991b1b;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.error-box strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
 .error-box span {
   display: inline-block;
   margin-top: 8px;
-  padding: 4px 9px;
+  padding: 2px 8px;
   color: #7f1d1d;
   background: #fee2e2;
   border-radius: 999px;
@@ -499,10 +609,12 @@ pre {
   .message,
   .user-message {
     grid-template-columns: 36px minmax(0, 1fr);
+    max-width: 100%;
   }
 
   .user-message {
     grid-template-columns: minmax(0, 1fr) 36px;
+    max-width: 92%;
   }
 
   .avatar {

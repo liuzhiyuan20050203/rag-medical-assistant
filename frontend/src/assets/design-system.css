@@ -29,14 +29,14 @@
 .ui-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
 }
 
 .ui-section {
   background: rgba(255, 255, 255, 0.78);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
 }
 
 .ui-button {
@@ -61,9 +61,9 @@
 }
 
 .ui-button:hover:not(:disabled) {
-  color: var(--medical-blue);
-  background: var(--info-soft);
-  border-color: var(--info-border);
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-color: var(--primary);
 }
 
 .ui-button:disabled {
@@ -73,14 +73,14 @@
 
 .ui-button--primary {
   color: #ffffff;
-  background: var(--medical-blue);
-  border-color: var(--medical-blue);
+  background: var(--primary);
+  border-color: var(--primary);
 }
 
 .ui-button--primary:hover:not(:disabled) {
   color: #ffffff;
-  background: var(--medical-blue-dark);
-  border-color: var(--medical-blue-dark);
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
 }
 
 .ui-button--danger {
@@ -96,9 +96,9 @@
 }
 
 .ui-button--soft {
-  color: var(--info-text);
-  background: var(--info-soft);
-  border-color: var(--info-border);
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-color: var(--border);
 }
 
 .ui-tabs {
@@ -126,8 +126,8 @@
 .ui-tab:hover:not(:disabled),
 .ui-tab.active {
   color: #ffffff;
-  background: var(--medical-blue);
-  border-color: var(--medical-blue);
+  background: var(--primary);
+  border-color: var(--primary);
 }
 
 .ui-empty {
@@ -135,14 +135,14 @@
   color: var(--text-muted);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
 }
 
 .ui-alert {
   padding: 14px 16px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   line-height: 1.7;
 }
 

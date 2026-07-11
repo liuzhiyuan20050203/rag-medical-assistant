@@ -18,29 +18,6 @@
     </section>
 
     <section class="auth-shell">
-      <aside class="auth-intro">
-        <span class="eyebrow">SECURE ACCESS</span>
-        <h1>{{ introTitle }}</h1>
-        <p>
-          {{ introText }}
-        </p>
-
-        <div class="trust-list" aria-label="登录能力说明">
-          <div>
-            <ShieldCheck :size="20" aria-hidden="true" />
-            <span>用户与管理员权限分离</span>
-          </div>
-          <div>
-            <MessageSquareText :size="20" aria-hidden="true" />
-            <span>个人历史会话可继续追问</span>
-          </div>
-          <div>
-            <DatabaseZap :size="20" aria-hidden="true" />
-            <span>管理员可维护知识库与日志</span>
-          </div>
-        </div>
-      </aside>
-
       <form class="auth-card" @submit.prevent="submitForm">
         <div class="card-head">
           <div>
@@ -138,7 +115,6 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  DatabaseZap,
   Eye,
   EyeOff,
   LoaderCircle,
@@ -146,7 +122,6 @@ import {
   LogIn,
   LogOut,
   MessageSquareText,
-  ShieldCheck,
   UserPlus,
   UserRound,
 } from '@lucide/vue'
@@ -183,12 +158,6 @@ const helperText = computed(() => {
   return '注册仅需用户名和密码；请使用至少 6 位密码，注册后再登录。'
 })
 
-const introTitle = computed(() => (isRegister.value ? '注册普通用户账号' : '登录 AI 医疗 Agent 助手'))
-const introText = computed(() => (
-  isRegister.value
-    ? '创建账号后可保存个人对话、从历史记录继续咨询；也可以先用游客模式直接体验 AI 咨询。'
-    : '登录后可保存个人对话、从历史记录继续咨询；管理员账号可进入后台管理知识库、查看 Agent 调度日志。'
-))
 const cardKicker = computed(() => (isRegister.value ? '创建普通用户账号' : '欢迎回来'))
 const cardTitle = computed(() => (isRegister.value ? '注册账号' : '登录账号'))
 const alternatePath = computed(() => (isRegister.value ? '/login' : '/register'))
@@ -414,83 +383,23 @@ watch(
 }
 
 .auth-shell {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
-  gap: 28px;
-  align-items: stretch;
-  min-height: 620px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 540px;
+  padding: 20px 0;
 }
 
-.auth-intro,
 .auth-card {
+  width: 100%;
+  max-width: 440px;
   background: #ffffff;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
-}
-
-.auth-intro {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 36px 32px;
   display: grid;
-  align-content: center;
-  padding: clamp(26px, 5vw, 54px);
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(232, 248, 250, 0.86)),
-    #ffffff;
-}
-
-.eyebrow {
-  margin-bottom: 12px;
-  color: var(--pharmacy-teal);
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0;
-}
-
-.auth-intro h1 {
-  max-width: 620px;
-  color: var(--text-primary);
-  font-size: clamp(34px, 5vw, 54px);
-  font-weight: 900;
-  line-height: 1.1;
-}
-
-.auth-intro p {
-  max-width: 640px;
-  margin-top: 18px;
-  color: var(--text-secondary);
-  font-size: 16px;
-  line-height: 1.9;
-}
-
-.trust-list {
-  display: grid;
-  gap: 12px;
-  margin-top: 30px;
-}
-
-.trust-list div {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 10px 12px;
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(14, 116, 144, 0.16);
-  border-radius: 8px;
-  font-weight: 800;
-}
-
-.trust-list svg {
-  color: var(--pharmacy-teal);
-  flex: 0 0 auto;
-}
-
-.auth-card {
-  display: grid;
-  align-content: center;
-  gap: 16px;
-  padding: clamp(22px, 4vw, 32px);
+  gap: 18px;
 }
 
 .card-head {
@@ -498,20 +407,24 @@ watch(
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
+  margin-bottom: 4px;
 }
 
 .card-head h2 {
   margin-top: 4px;
   color: var(--text-primary);
-  font-size: 28px;
-  font-weight: 900;
+  font-size: 26px;
+  font-weight: 850;
 }
 
 .field {
   display: grid;
   gap: 8px;
   color: var(--text-primary);
-  font-weight: 900;
+  font-weight: 800;
+  font-size: 14.5px;
 }
 
 .input-wrap {
@@ -519,24 +432,25 @@ watch(
   grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  min-height: 48px;
+  min-height: 46px;
   padding: 0 12px;
   color: var(--text-muted);
-  background: #f8fbfd;
+  background: var(--surface-soft);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
 }
 
 .input-wrap:focus-within {
-  color: var(--medical-blue);
+  color: var(--primary);
   background: #ffffff;
-  border-color: var(--medical-blue);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
 }
 
 .input-wrap input {
   width: 100%;
-  min-height: 46px;
+  min-height: 44px;
   padding: 0;
   color: var(--text-primary);
   background: transparent;
@@ -547,26 +461,26 @@ watch(
 
 .ghost-icon {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   place-items: center;
   color: var(--text-muted);
   background: transparent;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
 }
 
 .ghost-icon:hover {
-  color: var(--medical-blue);
-  background: #eff6ff;
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .helper-text {
   margin: -2px 0 0;
   color: var(--text-muted);
   font-size: 13px;
-  line-height: 1.7;
+  line-height: 1.6;
 }
 
 .submit-btn {
@@ -574,21 +488,24 @@ watch(
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 48px;
+  min-height: 46px;
   padding: 0 18px;
   color: #ffffff;
-  background: linear-gradient(135deg, var(--medical-blue), var(--pharmacy-teal));
+  background: var(--primary);
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-weight: 900;
-  box-shadow: 0 14px 26px rgba(37, 99, 235, 0.22);
+  font-weight: 800;
+  transition: background-color 0.2s;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: var(--primary-hover);
 }
 
 .submit-btn:disabled {
   background: #94a3b8;
   cursor: not-allowed;
-  box-shadow: none;
 }
 
 .spin {
@@ -603,38 +520,39 @@ watch(
 
 .message {
   margin: 0;
-  padding: 11px 12px;
+  padding: 10px 12px;
   border-radius: 8px;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .message.success {
-  color: #166534;
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
+  color: var(--success-text);
+  background: var(--success-soft);
+  border: 1px solid var(--success-border);
 }
 
 .message.error {
   color: #991b1b;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
 }
 
 .auth-links {
   display: flex;
   justify-content: center;
-  margin-top: -2px;
+  margin-top: 4px;
+  font-size: 14.5px;
 }
 
 .auth-links a {
-  color: var(--medical-blue);
+  color: var(--primary);
   text-decoration: none;
-  font-weight: 900;
+  font-weight: 800;
 }
 
 .auth-links a:hover {
-  color: var(--medical-blue-dark);
+  color: var(--primary-hover);
 }
 
 .guest-divider {
@@ -644,7 +562,8 @@ watch(
   align-items: center;
   color: var(--text-muted);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 800;
+  margin: 8px 0;
 }
 
 .guest-divider::before,
@@ -659,30 +578,20 @@ watch(
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 46px;
+  min-height: 44px;
   padding: 0 18px;
-  color: var(--pharmacy-teal);
-  background: #ecfdf5;
+  color: var(--teal);
+  background: var(--teal-soft);
   border: 1px solid #99f6e4;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-weight: 900;
+  font-weight: 800;
+  transition: all 0.2s ease;
 }
 
 .guest-btn:hover {
   color: #0f766e;
-  background: #d1fae5;
-}
-
-@media (max-width: 900px) {
-  .auth-shell {
-    grid-template-columns: 1fr;
-    min-height: 0;
-  }
-
-  .auth-intro {
-    align-content: start;
-  }
+  background: #ccfbf1;
 }
 
 @media (max-width: 640px) {
@@ -690,6 +599,7 @@ watch(
   .card-head {
     align-items: flex-start;
     flex-direction: column;
+    gap: 8px;
   }
 
   .session-actions {

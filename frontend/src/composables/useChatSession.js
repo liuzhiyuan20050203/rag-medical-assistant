@@ -102,7 +102,9 @@ export const useChatSession = ({ scrollToBottom } = {}) => {
       const cache = JSON.parse(raw)
       activeSessionId.value = cache.activeSessionId || null
       messages.value = Array.isArray(cache.messages) ? cache.messages : []
-      await scrollToBottom?.()
+      if (messages.value.length > 0) {
+        await scrollToBottom?.()
+      }
       return messages.value.length > 0
     } catch (error) {
       clearChatCache()

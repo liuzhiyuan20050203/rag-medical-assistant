@@ -1,84 +1,96 @@
 <template>
-  <form class="composer" @submit.prevent="$emit('submit')">
-    <div v-if="attachmentVisible || speechStatusText" class="composer-status">
-      <div v-if="attachmentVisible" class="attachment-pill">
-        <img v-if="imagePreview" :src="imagePreview" alt="已添加的图片" />
-        <Paperclip v-else :size="18" aria-hidden="true" />
-        <span>{{ attachmentLabel }}</span>
-        <b v-if="imageLoading">处理中</b>
-        <button type="button" title="移除附件" aria-label="移除附件" @click="$emit('clear-attachment')">
-          <X :size="16" aria-hidden="true" />
+  <div class="composer-container">
+    <form
+      class="composer-card"
+      :class="{ focused: isFocused, disabled: loading }"
+      @submit.prevent="$emit('submit')"
+    >
+      <div v-if="attachmentVisible || speechStatusText" class="composer-status-row">
+        <div v-if="attachmentVisible" class="attachment-pill">
+          <img v-if="imagePreview" :src="imagePreview" alt="已添加的图片" />
+          <Paperclip v-else :size="17" aria-hidden="true" />
+          <span>{{ attachmentLabel }}</span>
+          <b v-if="imageLoading">识别中…</b>
+          <button type="button" aria-label="移除附件" @click="$emit('clear-attachment')">
+            <X :size="16" aria-hidden="true" />
+          </button>
+        </div>
+        <span v-if="speechStatusText" class="voice-status">{{ speechStatusText }}</span>
+      </div>
+
+      <div class="composer-main-row">
+        <button
+          type="button"
+          class="icon-action attach-action"
+          title="添加药盒、检查单或症状图片"
+          aria-label="添加图片"
+          :disabled="loading || imageLoading"
+          @click="openImagePicker"
+        >
+          <CirclePlus :size="29" aria-hidden="true" />
+        </button>
+        <input
+          ref="imageInputRef"
+          type="file"
+          accept="image/*"
+          class="sr-only"
+          @change="handleImageFile"
+        />
+
+        <textarea
+          ref="textareaRef"
+          :value="modelValue"
+          :placeholder="mainPlaceholder"
+          rows="1"
+          :disabled="loading"
+          @input="updateQuestion"
+          @focus="isFocused = true"
+          @blur="isFocused = false"
+          @keydown.enter.exact.prevent="$emit('submit')"
+        ></textarea>
+
+        <button
+          type="button"
+          class="icon-action voice-action"
+          :class="{ active: isListening }"
+          :disabled="!speechRecognitionSupported || loading"
+          :title="isListening ? '停止语音识别' : '开始语音输入'"
+          :aria-label="isListening ? '停止语音识别' : '开始语音输入'"
+          @click="$emit('toggle-voice')"
+        >
+          <MicOff v-if="isListening" :size="28" aria-hidden="true" />
+          <Mic v-else :size="28" aria-hidden="true" />
+        </button>
+
+        <button
+          type="submit"
+          class="send-button"
+          :disabled="loading || imageLoading || !canSubmit"
+          :title="loading || imageLoading ? '处理中' : '发送'"
+        >
+          <LoaderCircle v-if="loading || imageLoading" :size="22" class="spin" aria-hidden="true" />
+          <template v-else>
+            <span>发送</span>
+            <Send :size="22" aria-hidden="true" />
+          </template>
         </button>
       </div>
 
-      <span v-if="speechStatusText" class="subtle-status">{{ speechStatusText }}</span>
-    </div>
-
-    <div class="chat-composer-bar">
-      <button
-        type="button"
-        class="icon-btn voice-btn"
-        :class="{ active: isListening }"
-        :disabled="!speechRecognitionSupported"
-        :title="isListening ? '停止语音输入' : '语音输入'"
-        :aria-label="isListening ? '停止语音输入' : '语音输入'"
-        @click="$emit('toggle-voice')"
-      >
-        <MicOff v-if="isListening" :size="22" aria-hidden="true" />
-        <Mic v-else :size="22" aria-hidden="true" />
-      </button>
-
-      <textarea
-        ref="textareaRef"
-        :value="modelValue"
-        :placeholder="mainPlaceholder"
-        rows="1"
-        @input="updateQuestion"
-        @keydown.enter.exact.prevent="$emit('submit')"
-      ></textarea>
-
-      <input
-        ref="imageInputRef"
-        type="file"
-        accept="image/*"
-        class="sr-only"
-        @change="handleImageFile"
-      />
-
-      <button
-        type="button"
-        class="icon-btn"
-        title="添加图片"
-        aria-label="添加图片"
-        :disabled="loading || imageLoading"
-        @click="openImagePicker"
-      >
-        <Image :size="22" aria-hidden="true" />
-      </button>
-
-      <button
-        type="submit"
-        class="icon-btn send-btn"
-        :disabled="loading || imageLoading || !canSubmit"
-        :title="loading || imageLoading ? '处理中' : '发送'"
-        :aria-label="loading || imageLoading ? '处理中' : '发送'"
-      >
-        <LoaderCircle v-if="loading || imageLoading" :size="22" aria-hidden="true" />
-        <Send v-else :size="22" aria-hidden="true" />
-      </button>
-    </div>
-
-    <button type="button" class="new-chat-btn" :disabled="loading" @click="$emit('clear-conversation')">
-      <Plus :size="16" aria-hidden="true" />
-      新对话
-    </button>
-  </form>
+      <div class="composer-footer">
+        <span>AI 生成内容仅供健康信息参考，请核对重要信息</span>
+        <button type="button" :disabled="loading" @click="$emit('clear-conversation')">
+          <Plus :size="16" aria-hidden="true" />
+          新会话
+        </button>
+      </div>
+    </form>
+  </div>
 </template>
 
 <script setup>
 import { nextTick, ref, watch } from 'vue'
 import {
-  Image,
+  CirclePlus,
   LoaderCircle,
   Mic,
   MicOff,
@@ -89,50 +101,17 @@ import {
 } from '@lucide/vue'
 
 const props = defineProps({
-  modelValue: {
-    type: String,
-    default: '',
-  },
-  attachmentVisible: {
-    type: Boolean,
-    default: false,
-  },
-  imagePreview: {
-    type: String,
-    default: '',
-  },
-  attachmentLabel: {
-    type: String,
-    default: '',
-  },
-  imageLoading: {
-    type: Boolean,
-    default: false,
-  },
-  speechStatusText: {
-    type: String,
-    default: '',
-  },
-  isListening: {
-    type: Boolean,
-    default: false,
-  },
-  speechRecognitionSupported: {
-    type: Boolean,
-    default: false,
-  },
-  loading: {
-    type: Boolean,
-    default: false,
-  },
-  canSubmit: {
-    type: Boolean,
-    default: false,
-  },
-  mainPlaceholder: {
-    type: String,
-    default: '',
-  },
+  modelValue: { type: String, default: '' },
+  attachmentVisible: { type: Boolean, default: false },
+  imagePreview: { type: String, default: '' },
+  attachmentLabel: { type: String, default: '' },
+  imageLoading: { type: Boolean, default: false },
+  speechStatusText: { type: String, default: '' },
+  isListening: { type: Boolean, default: false },
+  speechRecognitionSupported: { type: Boolean, default: false },
+  loading: { type: Boolean, default: false },
+  canSubmit: { type: Boolean, default: false },
+  mainPlaceholder: { type: String, default: '' },
 })
 
 const emit = defineEmits([
@@ -146,150 +125,238 @@ const emit = defineEmits([
 
 const textareaRef = ref(null)
 const imageInputRef = ref(null)
+const isFocused = ref(false)
 
 const resize = async () => {
   await nextTick()
   const textarea = textareaRef.value
   if (!textarea) return
-
   textarea.style.height = 'auto'
-  textarea.style.height = `${Math.min(textarea.scrollHeight, 150)}px`
+  const nextHeight = Math.min(textarea.scrollHeight, 148)
+  textarea.style.height = `${nextHeight}px`
+  textarea.style.overflowY = textarea.scrollHeight > 148 ? 'auto' : 'hidden'
 }
 
-const focus = () => {
-  textareaRef.value?.focus()
-}
+const focus = () => textareaRef.value?.focus()
 
 const updateQuestion = async (event) => {
   emit('update:modelValue', event.target.value)
   await resize()
 }
 
-const openImagePicker = () => {
-  imageInputRef.value?.click()
-}
+const openImagePicker = () => imageInputRef.value?.click()
 
 const handleImageFile = (event) => {
   const file = event.target.files?.[0]
-  if (file) {
-    emit('image-file', file)
-  }
+  if (file) emit('image-file', file)
   event.target.value = ''
 }
 
-watch(
-  () => props.modelValue,
-  () => {
-    resize()
-  },
-)
+watch(() => props.modelValue, resize)
 
-defineExpose({
-  focus,
-  resize,
-})
+defineExpose({ focus, resize })
 </script>
 
 <style scoped>
-.composer {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  background: #ffffff;
-  border-top: 1px solid var(--border);
+.composer-container {
+  padding: 18px 24px 14px;
+  background: var(--surface);
+  border-top: 1px solid var(--outline-variant);
 }
 
-.composer-status {
+.composer-card {
+  position: relative;
+  padding: 10px 12px 8px;
+  background: var(--surface-soft);
+  border: 2px solid var(--outline-variant);
+  border-radius: var(--radius-lg);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.composer-card.focused {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(0, 80, 203, 0.1);
+  transform: translateY(-1px);
+}
+
+.composer-card.disabled {
+  opacity: 0.82;
+}
+
+.composer-main-row {
   display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 54px;
+  max-height: 148px;
+  padding: 11px 4px;
+  overflow-y: hidden;
+  color: var(--text-primary);
+  resize: none;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 18px;
+  line-height: 1.7;
+}
+
+textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.icon-action {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--text-muted);
+  background: transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
+}
+
+.icon-action:hover:not(:disabled) {
+  color: var(--primary);
+  background: var(--primary-soft);
+  transform: translateY(-1px);
+}
+
+.voice-action.active {
+  color: #fff;
+  background: var(--danger);
+  animation: listeningPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes listeningPulse {
+  50% { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0.1); }
+}
+
+.send-button {
+  display: inline-flex;
+  min-width: 118px;
+  min-height: 52px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 20px;
+  color: #fff;
+  background: var(--primary-bright);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 850;
+  box-shadow: 0 6px 14px rgba(0, 80, 203, 0.18);
+  transition: background-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.send-button:hover:not(:disabled) {
+  background: var(--primary);
+  box-shadow: 0 8px 18px rgba(0, 80, 203, 0.24);
+  transform: translateY(-1px);
+}
+
+.send-button:disabled,
+.icon-action:disabled,
+.composer-footer button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.composer-status-row {
+  display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  align-items: center;
+  padding: 2px 4px 8px;
 }
 
 .attachment-pill {
   display: inline-flex;
+  min-height: 34px;
   align-items: center;
   gap: 8px;
-  max-width: min(100%, 520px);
-  min-height: 42px;
-  padding: 5px 8px;
-  color: var(--text-secondary);
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  max-width: 100%;
+  padding: 4px 7px 4px 9px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-radius: var(--radius-md);
   font-size: 13px;
+  font-weight: 700;
 }
 
 .attachment-pill img {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   object-fit: cover;
-  border-radius: 999px;
+  border-radius: var(--radius-xs);
 }
 
 .attachment-pill span {
-  min-width: 0;
+  max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .attachment-pill b {
-  flex: 0 0 auto;
-  color: #1d4ed8;
   font-size: 12px;
 }
 
 .attachment-pill button {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   place-items: center;
   color: var(--text-muted);
   background: transparent;
-  border: 0;
-  border-radius: 999px;
+  border-radius: 50%;
   cursor: pointer;
 }
 
 .attachment-pill button:hover {
-  color: #991b1b;
-  background: #fee2e2;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
-.subtle-status {
+.voice-status {
   color: var(--text-muted);
   font-size: 13px;
 }
 
-.chat-composer-bar {
-  display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) 46px 46px;
-  gap: 8px;
-  align-items: end;
-  padding: 8px;
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+.composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 4px 0;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
-textarea {
-  width: 100%;
-  min-height: 46px;
-  max-height: 150px;
-  padding: 12px 4px;
-  color: var(--text-primary);
-  resize: none;
-  overflow-y: auto;
+.composer-footer button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
   background: transparent;
-  border: 0;
-  border-radius: 8px;
-  outline: none;
+  cursor: pointer;
+  font-weight: 700;
 }
 
-textarea:focus {
-  box-shadow: none;
+.composer-footer button:hover:not(:disabled) {
+  color: var(--primary);
+}
+
+.spin {
+  animation: spin 1s linear infinite;
 }
 
 .sr-only {
@@ -298,110 +365,52 @@ textarea:focus {
   height: 1px;
   padding: 0;
   overflow: hidden;
-  white-space: nowrap;
+  clip: rect(0, 0, 0, 0);
   border: 0;
-  clip: rect(0 0 0 0);
-}
-
-.icon-btn {
-  display: grid;
-  width: 46px;
-  height: 46px;
-  place-items: center;
-  color: var(--text-secondary);
-  background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-  transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    color 0.2s ease,
-    transform 0.2s ease;
-}
-
-.voice-btn {
-  color: #0f766e;
-  background: #ecfdf5;
-  border: 1px solid #99f6e4;
-}
-
-.voice-btn.active {
-  color: #ffffff;
-  background: #dc2626;
-  border-color: #dc2626;
-}
-
-.voice-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.icon-btn:hover:not(:disabled) {
-  color: #1d4ed8;
-  background: #eff6ff;
-  border-color: #93c5fd;
-  transform: translateY(-1px);
-}
-
-.send-btn {
-  color: #ffffff;
-  background: var(--medical-blue);
-  border-color: var(--medical-blue);
-}
-
-.send-btn:hover:not(:disabled) {
-  color: #ffffff;
-  background: var(--medical-blue);
-  border-color: var(--medical-blue);
-}
-
-.send-btn svg {
-  animation: none;
-  transform: translateX(1px);
-}
-
-.send-btn:disabled,
-.icon-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.send-btn:disabled svg {
-  animation: spin 1s linear infinite;
-}
-
-.new-chat-btn {
-  display: inline-flex;
-  width: fit-content;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-muted);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.new-chat-btn:hover:not(:disabled) {
-  color: #1d4ed8;
 }
 
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 
 @media (max-width: 640px) {
-  .chat-composer-bar {
-    grid-template-columns: 42px minmax(0, 1fr) 42px 42px;
-    padding: 8px;
+  .composer-container {
+    padding: 10px;
   }
 
-  .icon-btn {
-    width: 42px;
-    height: 42px;
+  .composer-card {
+    padding: 7px;
+  }
+
+  .composer-main-row {
+    gap: 4px;
+  }
+
+  textarea {
+    min-height: 48px;
+    padding: 9px 2px;
+    font-size: 16px;
+  }
+
+  .icon-action {
+    width: 40px;
+    height: 44px;
+  }
+
+  .send-button {
+    min-width: 48px;
+    width: 48px;
+    min-height: 46px;
+    padding: 0;
+  }
+
+  .send-button span,
+  .composer-footer > span {
+    display: none;
+  }
+
+  .composer-footer {
+    justify-content: flex-end;
   }
 }
 </style>

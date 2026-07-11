@@ -1,31 +1,79 @@
 <template>
-  <div class="page">
-    <div class="page-title ui-page-heading">
-      <h2>问答历史记录</h2>
-      <p>
-        系统会自动保存最近的 AI 医疗助手对话，便于查看用户问题、系统回答、危险提醒和检索结果。
-      </p>
-    </div>
-
-    <div class="toolbar ui-toolbar">
-      <button class="ui-button ui-button--primary" @click="loadHistory(true)" :disabled="loading">
-        {{ loading ? '加载中...' : '刷新记录' }}
-      </button>
-
-      <button class="clear-btn ui-button ui-button--danger" @click="clearHistory">
-        清空历史
-      </button>
-    </div>
-
-    <div v-if="historyList.length === 0" class="empty ui-empty">
-      暂无历史记录，请先到“AI 助手”页面进行咨询。
-    </div>
-
-    <div v-for="item in historyList" :key="item.id" class="history-card ui-card">
-      <div class="card-header">
+  <div class="history-page">
+    <header class="page-title ui-page-heading">
+      <span class="page-kicker">CONSULTATION ARCHIVE</span>
+      <div class="heading-row">
         <div>
-          <strong>问题：{{ displayQuestion(item.question) }}</strong>
-          <span>{{ item.create_time }}</span>
+          <h2>我的咨询记录</h2>
+          <p>回看每一次健康咨询、知识引用与风险提示，也可以从任意记录继续对话。</p>
+        </div>
+        <div class="heading-actions">
+          <button class="ui-button ui-button--soft" :disabled="loading" @click="loadHistory(true)">
+            <RefreshCw :class="{ spin: loading }" :size="17" aria-hidden="true" />
+            {{ loading ? '正在刷新' : '刷新记录' }}
+          </button>
+          <button class="clear-btn ui-button" :disabled="historyList.length === 0" @click="clearHistory">
+            <Trash2 :size="17" aria-hidden="true" />
+            清空记录
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <section class="records-toolbar ui-card" aria-label="记录筛选与分页设置">
+      <div class="records-summary">
+        <span class="summary-icon"><Archive :size="18" aria-hidden="true" /></span>
+        <div>
+          <strong>{{ filteredHistory.length }}</strong>
+          <span>条可查看记录</span>
+        </div>
+      </div>
+
+      <label class="history-search">
+        <Search :size="17" aria-hidden="true" />
+        <input
+          v-model="searchQuery"
+          type="search"
+          placeholder="搜索问题或回答内容"
+          aria-label="搜索咨询记录"
+        />
+        <button v-if="searchQuery" type="button" aria-label="清空搜索" @click="searchQuery = ''">
+          <X :size="15" aria-hidden="true" />
+        </button>
+      </label>
+
+      <label class="page-size-control">
+        每页
+        <select v-model.number="pageSize" aria-label="每页显示记录数">
+          <option v-for="option in pageSizeOptions" :key="option" :value="option">{{ option }}</option>
+        </select>
+        条
+      </label>
+    </section>
+
+    <div v-if="loading && historyList.length === 0" class="empty ui-empty">
+      正在整理您的咨询记录...
+    </div>
+
+    <div v-else-if="historyList.length === 0" class="empty ui-empty">
+      暂无历史记录，请先到“AI 咨询”页面开始一次对话。
+    </div>
+
+    <div v-else-if="filteredHistory.length === 0" class="empty ui-empty">
+      没有找到与“{{ searchQuery }}”匹配的记录，请尝试其他关键词。
+    </div>
+
+    <section v-else class="history-list" aria-label="咨询记录列表">
+      <article v-for="(item, index) in pagedHistory" :key="item.id" class="history-card ui-card">
+      <div class="card-header">
+        <span class="record-index">{{ startIndex + index + 1 }}</span>
+        <div class="question-block">
+          <span class="question-label">我的问题</span>
+          <strong>{{ displayQuestion(item.question) }}</strong>
+          <span class="record-time">
+            <CalendarDays :size="14" aria-hidden="true" />
+            {{ item.create_time }}
+          </span>
         </div>
         <button
           v-if="item.session_id"
@@ -33,6 +81,7 @@
           class="continue-btn ui-button ui-button--soft"
           @click="continueConversation(item.session_id)"
         >
+          <MessageSquareMore :size="16" aria-hidden="true" />
           继续对话
         </button>
       </div>
@@ -45,11 +94,15 @@
         v-if="item.warning && item.warning.has_warning"
         class="warning ui-alert ui-alert--error"
       >
-        危险提醒：{{ item.warning.matched.join('、') }}
+        <strong>危险提醒</strong>
+        <span>{{ item.warning.matched?.join('、') || item.warning.message }}</span>
       </div>
 
       <div class="answer">
-        <h4>系统回答</h4>
+        <div class="answer-heading">
+          <span class="ai-mark">AI</span>
+          <h4>系统回答</h4>
+        </div>
         <pre>{{ item.answer }}</pre>
       </div>
 
@@ -104,19 +157,67 @@
           </button>
         </div>
       </div>
-    </div>
+      </article>
+    </section>
+
+    <nav v-if="filteredHistory.length > 0" class="pagination-bar" aria-label="咨询记录分页">
+      <span>第 {{ currentPage }} / {{ totalPages }} 页 · 显示 {{ displayStart }}–{{ displayEnd }} 条</span>
+      <div class="pager-buttons">
+        <button type="button" aria-label="第一页" :disabled="currentPage === 1" @click="currentPage = 1">
+          <ChevronsLeft :size="18" aria-hidden="true" />
+        </button>
+        <button type="button" aria-label="上一页" :disabled="currentPage === 1" @click="currentPage -= 1">
+          <ChevronLeft :size="18" aria-hidden="true" />
+        </button>
+        <button
+          v-for="page in visiblePageNumbers"
+          :key="page"
+          type="button"
+          class="page-number"
+          :class="{ active: page === currentPage }"
+          :aria-current="page === currentPage ? 'page' : undefined"
+          :aria-label="`第 ${page} 页`"
+          @click="currentPage = page"
+        >
+          {{ page }}
+        </button>
+        <button type="button" aria-label="下一页" :disabled="currentPage === totalPages" @click="currentPage += 1">
+          <ChevronRight :size="18" aria-hidden="true" />
+        </button>
+        <button type="button" aria-label="最后一页" :disabled="currentPage === totalPages" @click="currentPage = totalPages">
+          <ChevronsRight :size="18" aria-hidden="true" />
+        </button>
+      </div>
+    </nav>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import {
+  Archive,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  MessageSquareMore,
+  RefreshCw,
+  Search,
+  Trash2,
+  X,
+} from '@lucide/vue'
 import { apiUrl, cachedGetJson, clearPageCache } from '../api'
 
 const router = useRouter()
 const historyList = ref([])
 const loading = ref(false)
 const feedbackDrafts = reactive({})
+const searchQuery = ref('')
+const currentPage = ref(1)
+const pageSize = ref(5)
+const pageSizeOptions = [5, 10, 20]
 
 const authHeaders = (extra = {}) => {
   const token = localStorage.getItem('ragToken') || ''
@@ -174,6 +275,33 @@ const hasImageInput = (question = '') => {
   return text.includes('图片识别描述：') || text.includes('图片识别标签：')
 }
 
+const filteredHistory = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) return historyList.value
+
+  return historyList.value.filter((item) => [
+    displayQuestion(item.question),
+    item.answer,
+    item.create_time,
+    ...(item.retrieved_docs || []).map((doc) => doc.title),
+  ].filter(Boolean).join(' ').toLowerCase().includes(query))
+})
+
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredHistory.value.length / pageSize.value)))
+const startIndex = computed(() => (currentPage.value - 1) * pageSize.value)
+const displayStart = computed(() => (filteredHistory.value.length ? startIndex.value + 1 : 0))
+const displayEnd = computed(() => Math.min(filteredHistory.value.length, startIndex.value + pageSize.value))
+const pagedHistory = computed(() => filteredHistory.value.slice(startIndex.value, startIndex.value + pageSize.value))
+
+const visiblePageNumbers = computed(() => {
+  const maxVisible = 5
+  let firstPage = Math.max(1, currentPage.value - 2)
+  const lastPage = Math.min(totalPages.value, firstPage + maxVisible - 1)
+  firstPage = Math.max(1, lastPage - maxVisible + 1)
+
+  return Array.from({ length: lastPage - firstPage + 1 }, (_, index) => firstPage + index)
+})
+
 const loadHistory = async (force = false) => {
   loading.value = true
 
@@ -209,6 +337,7 @@ const clearHistory = async () => {
     })
 
     historyList.value = []
+    currentPage.value = 1
     clearPageCache(historyCacheKey())
   } catch (error) {
     alert('清空失败，请检查后端服务是否正常运行。')
@@ -259,46 +388,259 @@ const submitFeedback = async (recordId) => {
   }
 }
 
+watch([searchQuery, pageSize], () => {
+  currentPage.value = 1
+})
+
+watch(totalPages, (value) => {
+  if (currentPage.value > value) currentPage.value = value
+})
+
 onMounted(() => {
   loadHistory()
 })
 </script>
 
 <style scoped>
+.history-page {
+  display: grid;
+  gap: 20px;
+}
+
+.page-title {
+  position: relative;
+  margin-bottom: 2px;
+  padding: 26px 28px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 94% 12%, rgba(37, 99, 235, 0.11), transparent 30%),
+    linear-gradient(135deg, rgba(240, 253, 250, 0.92), rgba(255, 255, 255, 0.97) 54%, rgba(239, 246, 255, 0.9));
+  border: 1px solid #dce7f2;
+  border-radius: 22px;
+  box-shadow: 0 18px 45px rgba(27, 57, 91, 0.07);
+}
+
+.page-kicker {
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+}
+
+.heading-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.heading-row p {
+  margin-top: 8px;
+}
+
+.heading-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+.clear-btn {
+  color: #b42318;
+  background: #fff;
+  border-color: #f5d0cc;
+}
+
+.clear-btn:hover:not(:disabled) {
+  color: #991b1b;
+  background: var(--danger-soft);
+  border-color: #fca5a5;
+}
+
+.records-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(240px, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(16px);
+}
+
+.records-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 18px;
+  border-right: 1px solid var(--border);
+}
+
+.summary-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  color: var(--teal);
+  background: var(--teal-soft);
+  border-radius: 12px;
+}
+
+.records-summary div {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.records-summary strong {
+  color: var(--text-primary);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.records-summary span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.history-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 12px;
+  color: var(--text-muted);
+  background: var(--surface-soft);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  transition: 0.2s ease;
+}
+
+.history-search:focus-within {
+  color: var(--primary);
+  background: #fff;
+  border-color: #bfdbfe;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+.history-search input {
+  width: 100%;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  outline: 0;
+}
+
+.history-search button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  color: var(--text-muted);
+  background: transparent;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.history-search button:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.page-size-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.page-size-control select {
+  min-height: 36px;
+  padding: 0 28px 0 10px;
+  color: var(--text-secondary);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  outline: 0;
+  font-weight: 800;
+}
+
+.history-list {
+  display: grid;
+  gap: 16px;
+}
+
 .history-card {
-  margin-bottom: 22px;
-  padding: 24px;
+  padding: 22px;
+  overflow: hidden;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.history-card:hover {
+  border-color: #c8d8eb;
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 
 .card-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   border-bottom: 1px solid var(--border);
-  padding-bottom: 14px;
-  margin-bottom: 16px;
+  padding-bottom: 16px;
+  margin-bottom: 18px;
 }
 
-.card-header > div {
+.record-index {
   display: grid;
-  gap: 6px;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.question-block {
+  display: grid;
+  gap: 4px;
   min-width: 0;
 }
 
-.card-header strong {
-  color: var(--text-primary);
+.question-label {
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
 }
 
-.card-header span {
+.question-block strong {
+  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.record-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 12.5px;
 }
 
 .continue-btn {
   flex: 0 0 auto;
   min-height: 36px;
-  font-size: 14px;
+  font-size: 13.5px;
+  border-radius: 8px;
 }
 
 .input-tag {
@@ -307,41 +649,87 @@ onMounted(() => {
 }
 
 .warning {
+  display: grid;
+  gap: 3px;
   margin-bottom: 16px;
+  border-left: 4px solid var(--danger);
+  background: var(--danger-soft);
+  color: #7f1d1d;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+
+.warning strong {
+  font-size: 13px;
+}
+
+.answer {
+  padding: 18px 20px;
+  background: linear-gradient(145deg, #f8fbff, #ffffff 58%);
+  border: 1px solid #dfe9f5;
+  border-radius: 14px;
+}
+
+.answer-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ai-mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: #fff;
+  background: linear-gradient(135deg, var(--primary), var(--teal));
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 900;
 }
 
 .answer h4,
 .docs h4 {
-  color: var(--medical-blue);
-  margin-bottom: 10px;
+  color: var(--primary);
+  font-size: 16px;
+  font-weight: 800;
 }
 
 pre {
   white-space: pre-wrap;
   line-height: 1.8;
-  font-size: 15px;
-  color: var(--text-secondary);
-  font-family: "Microsoft YaHei", Arial, sans-serif;
+  font-size: 16px;
+  color: var(--text-primary);
+  font-family: inherit;
 }
 
 .docs {
   margin-top: 18px;
 }
 
+.docs h4 {
+  margin-bottom: 10px;
+}
+
 .doc-item {
-  background: #f8fafc;
+  background: var(--surface-soft);
   border: 1px solid var(--border);
   padding: 12px 14px;
   border-radius: var(--radius-sm);
   margin-top: 10px;
+  font-size: 14.5px;
 }
 
 .doc-item span {
   margin-left: 8px;
-  font-size: 12px;
-  color: var(--surface);
-  background: var(--medical-blue);
-  padding: 3px 8px;
+  font-size: 11px;
+  color: #ffffff;
+  background: var(--teal);
+  padding: 2px 8px;
   border-radius: var(--radius-pill);
 }
 
@@ -351,6 +739,65 @@ pre {
   margin-top: 18px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
+}
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.pagination-bar > span {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pager-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.pager-buttons button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  color: var(--text-secondary);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  transition: 0.2s ease;
+}
+
+.pager-buttons button:hover:not(:disabled),
+.pager-buttons button.active {
+  color: #fff;
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.2);
+}
+
+.pager-buttons button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .feedback-title {
@@ -394,15 +841,17 @@ pre {
   place-items: center;
   padding: 0;
   color: #cbd5e1;
-  background: #f8fafc;
+  background: var(--surface-soft);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   font-size: 22px;
   line-height: 1;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .star-rating button.active {
-  color: var(--medicine-amber);
+  color: var(--warning);
   background: var(--warning-soft);
   border-color: var(--warning-border);
 }
@@ -414,13 +863,53 @@ pre {
 }
 
 @media (max-width: 640px) {
-  .card-header {
+  .page-title {
+    padding: 22px;
+  }
+
+  .heading-row,
+  .pagination-bar {
+    align-items: stretch;
     flex-direction: column;
+  }
+
+  .heading-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .records-toolbar {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .records-summary {
+    padding-right: 0;
+    padding-bottom: 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .page-size-control {
+    justify-content: flex-end;
+  }
+
+  .card-header {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .continue-btn {
+    grid-column: 1 / -1;
   }
 
   .feedback-title {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .pager-buttons {
+    justify-content: center;
+    overflow-x: auto;
   }
 }
 </style>

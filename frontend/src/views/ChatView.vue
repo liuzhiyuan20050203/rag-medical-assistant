@@ -1,33 +1,52 @@
 <template>
   <div class="chat-page">
     <section class="chat-shell">
+      <!-- Top fold panel: history sessions -->
       <aside class="chat-side">
-        <div class="assistant-card">
-          <span class="assistant-badge">AI 医疗 Agent</span>
-          <h2>把症状、药品和图片都发到这里</h2>
-          <p>
-            系统会统一处理文字、语音和图片线索，优先识别危险信号，再检索知识库生成参考建议。
-          </p>
+        <div class="side-primary-actions">
           <button type="button" class="new-session-btn" :disabled="loading" @click="startNewConversation">
-            <Plus :size="17" aria-hidden="true" />
-            新对话
+            <Plus :size="24" aria-hidden="true" />
+            <span>新建对话</span>
           </button>
         </div>
 
-        <button type="button" class="side-toggle" @click="sidePanelOpen = !sidePanelOpen">
+        <button
+          type="button"
+          class="side-toggle"
+          :aria-expanded="sidePanelOpen"
+          aria-controls="chat-history-panel"
+          @click="sidePanelOpen = !sidePanelOpen"
+        >
           <ChevronDown :class="{ open: sidePanelOpen }" :size="16" aria-hidden="true" />
-          历史会话与咨询提示
+          <span>历史会话</span>
+          <small v-if="currentUser">{{ conversationSessions.length }}</small>
         </button>
 
-        <div :class="['side-content', { open: sidePanelOpen }]">
+        <div id="chat-history-panel" :class="['side-content', { open: sidePanelOpen }]">
           <div class="session-panel">
             <div class="section-title">
-              <strong>历史会话</strong>
+              <div>
+                <strong>最近会话</strong>
+                <span v-if="currentUser">{{ conversationSessions.length }}</span>
+              </div>
               <button type="button" :disabled="sessionsLoading" @click="loadConversationSessions">
                 <RefreshCw :size="14" aria-hidden="true" />
                 {{ sessionsLoading ? '刷新中' : '刷新' }}
               </button>
             </div>
+
+            <label v-if="currentUser && conversationSessions.length" class="session-search">
+              <Search :size="15" aria-hidden="true" />
+              <input
+                v-model="sessionSearch"
+                type="search"
+                placeholder="搜索历史会话"
+                aria-label="搜索历史会话"
+              />
+              <button v-if="sessionSearch" type="button" aria-label="清空历史会话搜索" @click="sessionSearch = ''">
+                <X :size="14" aria-hidden="true" />
+              </button>
+            </label>
 
             <div v-if="!currentUser" class="session-empty">
               {{ isGuest ? '游客模式可直接咨询，登录后可保存并继续历史会话。' : '登录后会自动保存历史会话，并可从这里继续对话。' }}
@@ -38,15 +57,18 @@
             <div v-else-if="conversationSessions.length === 0" class="session-empty">
               暂无历史会话，发送第一条消息后会自动保存。
             </div>
+            <div v-else-if="filteredConversationSessions.length === 0" class="session-empty">
+              没有找到与“{{ sessionSearch }}”匹配的会话。
+            </div>
             <div v-else class="session-list">
               <button
-                v-for="session in conversationSessions"
+                v-for="session in filteredConversationSessions"
                 :key="session.id"
                 type="button"
                 :class="{ active: Number(activeSessionId) === Number(session.id) }"
                 @click="openConversationSession(session.id)"
               >
-                <History :size="15" aria-hidden="true" />
+                <HistoryIcon :size="15" aria-hidden="true" />
                 <span>{{ session.title || `会话 #${session.id}` }}</span>
                 <small>{{ session.message_count || 0 }} 条消息</small>
               </button>
@@ -54,51 +76,76 @@
 
             <p v-if="sessionsStatus && currentUser" class="session-status">{{ sessionsStatus }}</p>
           </div>
-
-          <div class="quick-panel">
-            <div class="section-title">
-              <strong>咨询提示</strong>
-              <span>描述越清楚越好</span>
-            </div>
-            <article
-              v-for="item in consultationTips"
-              :key="item.label"
-              class="quick-card"
-            >
-              <strong>{{ item.label }}</strong>
-              <span>{{ item.hint }}</span>
-            </article>
-          </div>
-
-          <div v-if="isAdmin" class="admin-tip">
-            <strong>管理员模式</strong>
-            <span>可查看 Agent 调度、可靠性评分和工具调用链路。</span>
-          </div>
         </div>
       </aside>
 
+      <!-- Main chat area -->
       <main class="chat-main">
-        <div ref="conversationRef" class="conversation">
-          <ChatMessage
-            :message="welcomeMessage"
-            :is-admin="isAdmin"
-            :interactive="false"
-          />
+        <header class="chat-header">
+          <div class="assistant-identity">
+            <span class="assistant-icon" aria-hidden="true">
+              <Bot :size="27" :stroke-width="2.2" />
+            </span>
+            <span>
+              <strong>MedAgent 智能咨询</strong>
+              <small><i></i>智能助手已就绪</small>
+            </span>
+          </div>
+          <button type="button" class="chat-menu-button" aria-label="更多咨询选项">
+            <MoreHorizontal :size="27" aria-hidden="true" />
+          </button>
+        </header>
 
-          <ChatMessage
-            v-for="message in messages"
-            :key="message.id"
-            :message="message"
-            :is-admin="isAdmin"
-            :speech-synthesis-supported="speechSynthesisSupported"
-            :speaking-message-id="speakingMessageId"
-            :feedback-options="feedbackOptions"
-            @toggle-speak="toggleSpeak"
-            @submit-feedback="submitFeedback"
-            @append-followup="appendFollowup"
-          />
+        <div ref="conversationRef" class="conversation">
+          <!-- Empty conversation state -->
+          <div v-if="messages.length === 0" class="empty-conversation-state">
+            <div class="empty-icon-wrap">
+              <svg class="med-cross-icon" viewBox="0 0 24 24" role="img">
+                <path d="M19 10.5h-5.5V5c0-.8-.7-1.5-1.5-1.5s-1.5.7-1.5 1.5v5.5H5c-.8 0-1.5.7-1.5 1.5s.7 1.5 1.5 1.5h5.5V19c0 .8.7 1.5 1.5 1.5s1.5-.7 1.5-1.5v-5.5H19c.8 0 1.5-.7 1.5-1.5s-.7-1.5-1.5-1.5z" fill="currentColor"/>
+              </svg>
+            </div>
+            <h2>今天想咨询什么？</h2>
+            <p class="empty-subtitle">
+              请尽量说明症状部位、持续时间、年龄以及是否正在服药，AI 将结合健康知识库为您整理参考建议。
+            </p>
+            <div class="quick-prompts-grid">
+              <button type="button" class="quick-prompt-card" @click="triggerQuickConsult('我最近总是头痛，尤其是晚上，已经持续三天了。该怎么护理？')">
+                <span class="prompt-title">感冒发热</span>
+                <span class="prompt-desc">头痛、发烧38.5℃的护理与用药建议</span>
+              </button>
+              <button type="button" class="quick-prompt-card" @click="triggerQuickConsult('请帮我核对布洛芬的服用禁忌、适用人群和注意事项。')">
+                <span class="prompt-title">药品禁忌</span>
+                <span class="prompt-desc">了解布洛芬的适用情况和禁用人群</span>
+              </button>
+              <button type="button" class="quick-prompt-card" @click="triggerQuickConsult('血常规报告中白细胞计数偏高，通常是什么原因？')">
+                <span class="prompt-title">检查单解读</span>
+                <span class="prompt-desc">分析血常规指标偏高的潜在临床意义</span>
+              </button>
+              <button type="button" class="quick-prompt-card" @click="triggerQuickConsult('手臂上突然出现红斑并伴随瘙痒，如何作应急处理？')">
+                <span class="prompt-title">皮肤症状</span>
+                <span class="prompt-desc">急性过敏性皮肤症状的初步建议</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Message list -->
+          <template v-else>
+            <ChatMessage
+              v-for="message in messages"
+              :key="message.id"
+              :message="message"
+              :is-admin="isAdmin"
+              :speech-synthesis-supported="speechSynthesisSupported"
+              :speaking-message-id="speakingMessageId"
+              :feedback-options="feedbackOptions"
+              @toggle-speak="toggleSpeak"
+              @submit-feedback="submitFeedback"
+              @append-followup="appendFollowup"
+            />
+          </template>
         </div>
 
+        <!-- Composer area -->
         <ChatComposer
           ref="composerRef"
           v-model="question"
@@ -131,7 +178,16 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronDown, History, Plus, RefreshCw } from '@lucide/vue'
+import {
+  Bot,
+  ChevronDown,
+  History as HistoryIcon,
+  MoreHorizontal,
+  Plus,
+  RefreshCw,
+  Search,
+  X,
+} from '@lucide/vue'
 import { apiUrl, clearPageCacheByPrefix } from '../api'
 import ChatComposer from '../components/chat/ChatComposer.vue'
 import ChatMessage from '../components/chat/ChatMessage.vue'
@@ -141,25 +197,6 @@ import { useSpeechInput } from '../composables/useSpeechInput'
 const route = useRoute()
 const router = useRouter()
 
-const consultationTips = [
-  {
-    label: '症状描述',
-    hint: '说清楚部位、持续时间、是否加重。',
-  },
-  {
-    label: '危险信号',
-    hint: '胸痛、呼吸困难、高热不退要优先说明。',
-  },
-  {
-    label: '用药核对',
-    hint: '可以直接问药品禁忌、剂量和注意事项。',
-  },
-  {
-    label: '图片辅助',
-    hint: '药盒、症状照片、检查单可作为参考线索。',
-  },
-]
-
 const feedbackOptions = [
   { label: '有帮助', rating: 5, text: '有帮助' },
   { label: '不准确', rating: 1, text: '回答不准确' },
@@ -167,13 +204,6 @@ const feedbackOptions = [
   { label: '没看懂图片', rating: 1, text: '图片识别或图片理解不准确' },
   { label: '答非所问', rating: 1, text: '回答和问题不匹配' },
 ]
-
-const welcomeMessage = {
-  id: 'welcome',
-  role: 'assistant',
-  title: '你好，我是 AI 医疗 Agent，可以帮你梳理症状和用药问题。',
-  content: '你可以直接描述症状、询问药品禁忌，或上传药盒、症状照片、检查单图片。',
-}
 
 const inputType = ref('text')
 const question = ref('')
@@ -190,6 +220,7 @@ const composerRef = ref(null)
 const speechSynthesisSupported = ref(false)
 const speakingMessageId = ref('')
 const sidePanelOpen = ref(false)
+const sessionSearch = ref('')
 const loadingStageTimers = []
 
 const scrollToBottom = async () => {
@@ -241,6 +272,17 @@ const canSubmit = computed(() => {
   )
 })
 
+const filteredConversationSessions = computed(() => {
+  const query = sessionSearch.value.trim().toLowerCase()
+  if (!query) return conversationSessions.value
+
+  return conversationSessions.value.filter((session) => [
+    session.title,
+    session.id,
+    session.message_count,
+  ].filter((value) => value !== undefined && value !== null).join(' ').toLowerCase().includes(query))
+})
+
 const attachmentVisible = computed(() => Boolean(imagePreview.value || imageFileName.value || imageStatus.value))
 
 const attachmentLabel = computed(() => {
@@ -252,7 +294,7 @@ const attachmentLabel = computed(() => {
   return '已添加附件'
 })
 
-const mainPlaceholder = computed(() => '发消息或按住说话，可以添加药盒、检查单、症状照片...')
+const mainPlaceholder = computed(() => '请输入症状描述、用药疑问或健康咨询，可附加药盒/报告图片...')
 
 const speechStatusText = computed(() => {
   if (!speechRecognitionSupported.value) return '当前浏览器不支持语音识别，建议使用 Chrome 或 Edge。'
@@ -564,9 +606,16 @@ const appendFollowup = async (item) => {
   await resizeComposer()
 }
 
+const collapseHistoryOnCompactScreen = () => {
+  if (window.matchMedia('(max-width: 760px)').matches) {
+    sidePanelOpen.value = false
+  }
+}
+
 const startNewConversation = async () => {
   if (loading.value) return
 
+  collapseHistoryOnCompactScreen()
   clearCurrentConversation()
   question.value = ''
   clearAttachment()
@@ -580,6 +629,7 @@ const startNewConversation = async () => {
 
 const openConversationSession = (sessionId) => {
   if (!sessionId || loading.value) return
+  collapseHistoryOnCompactScreen()
   router.push({
     path: '/chat',
     query: {
@@ -771,12 +821,18 @@ const submitQuestion = async () => {
   }
 }
 
+const triggerQuickConsult = (text) => {
+  question.value = text
+  submitQuestion()
+}
+
 const syncCurrentUser = () => {
   loadCurrentUser()
   loadConversationSessions()
 }
 
 onMounted(() => {
+  sidePanelOpen.value = window.matchMedia('(min-width: 761px)').matches
   syncCurrentUser()
   refreshSpeechSupport()
   speechSynthesisSupported.value = 'speechSynthesis' in window
@@ -787,6 +843,16 @@ onMounted(() => {
     restoreSessionFromServer(sessionId)
   } else {
     restoreChatCache()
+  }
+
+  // Handle pending question redirected from the HomeView symptom search bar
+  const pendingQuestion = sessionStorage.getItem('home_pending_question')
+  if (pendingQuestion) {
+    sessionStorage.removeItem('home_pending_question')
+    question.value = pendingQuestion
+    nextTick(() => {
+      submitQuestion()
+    })
   }
 })
 
@@ -820,10 +886,15 @@ onBeforeUnmount(() => {
 
 .chat-shell {
   display: grid;
-  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 0;
   height: calc(100dvh - 156px);
   min-height: 600px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .chat-side,
@@ -832,59 +903,16 @@ onBeforeUnmount(() => {
 }
 
 .chat-side {
-  display: grid;
-  align-content: start;
-  gap: 10px;
-}
-
-.assistant-card,
-.session-panel,
-.quick-panel,
-.admin-tip,
-.chat-main,
-.safety-note {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 24px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
+  border-right: 1px solid var(--outline-variant);
 }
 
-.assistant-card {
-  display: grid;
-  gap: 10px;
-  padding: 16px;
-}
-
-.assistant-badge {
-  display: inline-flex;
-  margin-bottom: 10px;
-  padding: 5px 10px;
-  color: #0f766e;
-  background: #ccfbf1;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.assistant-card h2 {
-  margin-bottom: 8px;
-  color: var(--text-primary);
-  font-size: 18px;
-  line-height: 1.25;
-}
-
-.assistant-card p {
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.assistant-card p,
-.section-title span,
-.session-empty,
-.session-status,
-.admin-tip span,
-.safety-note {
-  color: var(--text-muted);
+.side-primary-actions {
+  flex: 0 0 auto;
 }
 
 .new-session-btn {
@@ -892,18 +920,24 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 38px;
-  padding: 0 12px;
+  min-height: 56px;
+  width: 100%;
+  min-width: 0;
+  padding: 0 16px;
   color: #ffffff;
-  background: var(--medical-blue);
-  border: 1px solid var(--medical-blue);
-  border-radius: 8px;
+  background: var(--primary-bright);
+  border: none;
+  border-radius: var(--radius-md);
   cursor: pointer;
+  font-size: 18px;
   font-weight: 800;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s ease;
 }
 
 .new-session-btn:hover:not(:disabled) {
-  background: var(--medical-blue-dark);
+  background: var(--primary-hover);
+  transform: translateY(-1px);
 }
 
 .new-session-btn:disabled {
@@ -912,39 +946,120 @@ onBeforeUnmount(() => {
 }
 
 .side-toggle {
-  display: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 16px;
+  padding: 0 4px;
+  color: var(--text-secondary);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 800;
+  transition: 0.2s ease;
+}
+
+.side-toggle:hover,
+.side-toggle[aria-expanded='true'] {
+  color: var(--text-primary);
+  background: rgba(226, 232, 240, 0.72);
+}
+
+.side-toggle svg {
+  transition: transform 0.2s ease;
+}
+
+.side-toggle svg.open {
+  transform: rotate(180deg);
+}
+
+.side-toggle small {
+  display: grid;
+  min-width: 23px;
+  height: 23px;
+  margin-left: auto;
+  padding: 0 6px;
+  place-items: center;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .side-content {
-  display: grid;
-  gap: 10px;
+  display: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.side-content.open {
+  display: flex;
+  flex-direction: column;
+  animation: historyFoldDown 0.2s ease-out;
+}
+
+@keyframes historyFoldDown {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .session-panel {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-}
-
-.quick-panel {
-  display: grid;
-  gap: 8px;
-  padding: 12px;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 0 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .section-title {
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  align-items: baseline;
+  align-items: center;
+  margin-bottom: 12px;
 }
 
 .section-title strong {
   color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 800;
 }
 
-.section-title span {
-  font-size: 12px;
+.section-title > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.section-title > div span {
+  display: grid;
+  min-width: 23px;
+  height: 23px;
+  padding: 0 6px;
+  place-items: center;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .section-title button {
@@ -952,260 +1067,402 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   min-height: 28px;
-  padding: 0 8px;
+  padding: 0 10px;
   color: var(--text-muted);
-  background: #f8fafc;
+  background: var(--surface-soft);
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .section-title button:hover:not(:disabled) {
-  color: #1d4ed8;
-  background: #eff6ff;
-  border-color: #bfdbfe;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-color: #93c5fd;
 }
 
-.section-title button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.session-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 54px;
+  margin-bottom: 14px;
+  padding: 0 14px;
+  color: var(--text-muted);
+  background: var(--surface-soft);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  transition: 0.2s ease;
+}
+
+.session-search:focus-within {
+  color: var(--primary);
+  background: #fff;
+  border-color: #bfdbfe;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+.session-search input {
+  width: 100%;
+  min-width: 0;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 16px;
+}
+
+.session-search button {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--text-muted);
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.session-search button:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .session-empty,
 .session-status {
-  padding: 10px;
-  background: #f8fafc;
+  padding: 12px;
+  background: var(--surface-soft);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
   line-height: 1.6;
+  color: var(--text-muted);
+  text-align: center;
 }
 
 .session-list {
-  display: grid;
-  gap: 7px;
-  max-height: 260px;
-  overflow: auto;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .session-list button {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 2px 7px;
+  gap: 2px 8px;
   align-items: center;
   width: 100%;
-  min-height: 48px;
-  padding: 8px 10px;
+  min-height: 68px;
+  padding: 12px 14px;
   color: var(--text-secondary);
   text-align: left;
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .session-list button:hover,
 .session-list button.active {
-  color: #1d4ed8;
-  background: #eff6ff;
+  color: var(--primary);
+  background: var(--primary-soft);
   border-color: #93c5fd;
+}
+
+.session-list button.active {
+  box-shadow: inset 3px 0 0 var(--primary);
 }
 
 .session-list svg {
   grid-row: span 2;
+  color: var(--text-muted);
 }
 
-.session-list span,
-.session-list small {
+.session-list button.active svg {
+  color: var(--primary);
+}
+
+.session-list span {
+  font-weight: 800;
+  font-size: 17px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.session-list span {
-  font-weight: 800;
-}
-
 .session-list small {
   color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.quick-card {
-  display: grid;
-  gap: 3px;
-  width: 100%;
-  min-height: 54px;
-  padding: 9px 10px;
-  color: var(--text-primary);
-  text-align: left;
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: default;
-}
-
-.quick-card:hover {
-  background: #f8fafc;
-  border-color: var(--border);
-}
-
-.quick-card span {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.admin-tip {
-  display: grid;
-  gap: 4px;
-  padding: 12px 14px;
-  border-color: #c7d2fe;
-  background: #eef2ff;
-}
-
-.admin-tip strong {
-  color: #3730a3;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .chat-main {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-rows: 80px minmax(0, 1fr) auto auto;
   min-height: 0;
   overflow: hidden;
+  background: rgba(255, 255, 255, 0.94);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.assistant-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.assistant-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--primary);
+  background: #dae8ff;
+  border-radius: var(--radius-lg);
+}
+
+.assistant-identity strong,
+.assistant-identity small {
+  display: flex;
+  align-items: center;
+}
+
+.assistant-identity strong {
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.assistant-identity small {
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--teal-bright);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.assistant-identity small i {
+  width: 10px;
+  height: 10px;
+  background: var(--teal-bright);
+  border-radius: 50%;
+  animation: statusPulse 1.7s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+  50% { opacity: 0.45; }
+}
+
+.chat-menu-button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  color: var(--text-muted);
+  background: transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.chat-menu-button:hover {
+  color: var(--text-primary);
+  background: var(--surface-container);
 }
 
 .conversation {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   overflow-y: auto;
-  padding: 20px;
+  padding: 28px clamp(22px, 3vw, 40px);
   scroll-behavior: smooth;
+  background:
+    radial-gradient(circle at 92% 4%, rgba(0, 191, 165, 0.035), transparent 28%),
+    var(--surface);
+}
+
+/* Empty consultation state styles */
+.empty-conversation-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: auto 0;
+  max-width: 740px;
+  align-self: center;
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.empty-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-md);
+  color: var(--primary);
+  background: var(--primary-soft);
+  margin-bottom: 20px;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.1);
+}
+
+.med-cross-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.empty-conversation-state h2 {
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.empty-subtitle {
+  font-size: 18px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 32px;
+  max-width: 580px;
+}
+
+.quick-prompts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  width: 100%;
+}
+
+.quick-prompt-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-sm);
+}
+
+.quick-prompt-card:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.08);
+}
+
+.prompt-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.quick-prompt-card:hover .prompt-title {
+  color: var(--primary);
+}
+
+.prompt-desc {
+  font-size: 15px;
+  color: var(--text-muted);
+  line-height: 1.5;
 }
 
 .safety-note {
-  padding: 9px 14px;
-  color: #9a3412;
-  background: #fff7ed;
-  border-top: 1px solid #fed7aa;
-  border-right: 0;
-  border-bottom: 0;
-  border-left: 0;
-  border-radius: 0;
-  border-color: #fed7aa;
-  box-shadow: none;
+  padding: 12px 18px;
+  color: var(--warning-text);
+  background: var(--warning-soft);
+  border-top: 1px solid var(--warning-border);
   font-size: 13px;
   line-height: 1.6;
 }
 
 @media (max-width: 900px) {
   .chat-shell {
-    grid-template-columns: 1fr;
-    height: auto;
-    min-height: 0;
-  }
-
-  .chat-main {
-    min-height: 640px;
+    grid-template-columns: minmax(230px, 260px) minmax(0, 1fr);
+    height: calc(100dvh - 220px);
+    min-height: 420px;
+    overflow: hidden;
   }
 }
 
 @media (max-width: 760px) {
   .chat-page {
-    min-height: 100dvh;
-    margin: -18px -16px -56px;
+    min-height: 0;
+    margin: 0;
   }
 
   .chat-shell {
     display: flex;
     flex-direction: column;
     gap: 0;
-    height: calc(100dvh - 8px);
+    height: calc(100dvh - 176px);
+    min-height: 540px;
     overflow: hidden;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-md);
   }
 
   .chat-side {
     position: relative;
-    z-index: 5;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     flex: 0 0 auto;
     gap: 8px;
     padding: 10px;
     background: rgba(255, 255, 255, 0.96);
+    border-right: 0;
     border-bottom: 1px solid var(--border);
   }
 
-  .assistant-card {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px 10px;
-    align-items: center;
-    padding: 12px;
-    box-shadow: none;
-  }
-
-  .assistant-badge {
-    grid-column: 1 / -1;
-    width: fit-content;
-    margin-bottom: 0;
-  }
-
-  .assistant-card h2 {
-    margin-bottom: 0;
+  .new-session-btn {
+    min-height: 48px;
+    min-width: 0;
     font-size: 15px;
   }
 
-  .assistant-card p {
-    display: none;
-  }
-
-  .new-session-btn {
-    min-height: 34px;
-    padding: 0 10px;
-    font-size: 13px;
-  }
-
   .side-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    min-height: 34px;
-    color: var(--text-secondary);
-    background: #f8fafc;
+    min-height: 48px;
+    margin-top: 0;
+    padding: 0 10px;
+    background: var(--surface-soft);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 800;
-  }
-
-  .side-toggle svg {
-    transition: transform 0.2s ease;
-  }
-
-  .side-toggle svg.open {
-    transform: rotate(180deg);
+    font-size: 15px;
   }
 
   .side-content {
-    display: none;
-    max-height: 38dvh;
-    overflow: auto;
+    grid-column: 1 / -1;
   }
 
   .side-content.open {
-    display: grid;
-  }
-
-  .session-panel,
-  .quick-panel,
-  .admin-tip {
-    box-shadow: none;
+    max-height: 30dvh;
   }
 
   .session-list {
@@ -1223,33 +1480,44 @@ onBeforeUnmount(() => {
     box-shadow: none;
   }
 
+  .chat-header {
+    order: 0;
+    min-height: 68px;
+    padding: 0 14px;
+  }
+
+  .assistant-icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .assistant-identity strong {
+    font-size: 17px;
+  }
+
   .conversation {
     order: 1;
     flex: 1 1 auto;
     min-height: 0;
-    padding: 12px;
+    padding: 14px;
+  }
+
+  .quick-prompts-grid {
+    grid-template-columns: 1fr;
   }
 
   .safety-note {
     order: 2;
     padding: 8px 12px;
-    border-top: 1px solid #fed7aa;
     font-size: 12px;
   }
 
-  :deep(.composer) {
+  :deep(.composer-container) {
     position: sticky;
     bottom: 0;
     z-index: 6;
     order: 3;
     padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
-    box-shadow: 0 -12px 28px rgba(15, 23, 42, 0.08);
-  }
-}
-
-@media (max-width: 640px) {
-  .conversation {
-    padding: 12px;
   }
 }
 </style>

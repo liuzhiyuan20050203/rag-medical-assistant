@@ -1,638 +1,523 @@
 <template>
-  <div class="home">
-    <section class="hero" aria-labelledby="home-title">
-      <div class="hero-copy">
-        <p class="eyebrow">RAG MEDICAL ASSISTANT</p>
-        <h1 id="home-title">AI 医疗 Agent 智能助手</h1>
-        <p>
-          将文字、语音、图片线索统一交给 Agent 调度，先识别危险信号，
-          再结合常见病与药品知识库生成结构化参考建议。
+  <div class="home-page">
+    <!-- Hero / Task Input Section -->
+    <header class="hero-section" aria-labelledby="hero-title">
+      <div class="hero-container">
+        <h1 id="hero-title">有哪里不舒服？</h1>
+        <p class="hero-subtitle">
+          描述您的症状、持续时间以及身体情况，AI 医疗 Agent 将结合权威健康知识库为您智能整理参考建议。
         </p>
 
-        <div class="actions">
-          <RouterLink class="btn primary" to="/chat">进入 AI 医疗助手</RouterLink>
-          <RouterLink class="btn" to="/knowledge">查看知识库</RouterLink>
-        </div>
+        <!-- Symptom query input card -->
+        <div class="query-card-wrapper">
+          <textarea
+            v-model="homeQuestion"
+            placeholder="例如：我最近总是头痛，晚上比较严重，还有一点鼻塞发热……"
+            class="query-textarea"
+            @keydown.enter.exact.prevent="startConsultation"
+          ></textarea>
 
-        <div class="hero-tags" aria-label="核心能力">
-          <span>危险症状优先分诊</span>
-          <span>RAG 知识库检索</span>
-          <span>语音 / 图片 / 文本输入</span>
-        </div>
-      </div>
+          <div class="query-action-row">
+            <div class="action-tools">
+              <button type="button" class="tool-btn" @click="goToChatWithAction('image')">
+                <ImageIcon :size="16" aria-hidden="true" />
+                <span>上传图片</span>
+              </button>
+              <button type="button" class="tool-btn" @click="goToChatWithAction('voice')">
+                <Mic :size="16" aria-hidden="true" />
+                <span>语音输入</span>
+              </button>
+            </div>
 
-      <div class="hospital-visual" aria-hidden="true">
-        <div class="building">
-          <div class="building-top">
-            <span>Agent 调度台</span>
-            <svg viewBox="0 0 24 24">
-              <path d="M9.2 3.8h5.6v5.4h5.4v5.6h-5.4v5.4H9.2v-5.4H3.8V9.2h5.4z" />
-            </svg>
-          </div>
-          <div class="window-grid">
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
+            <button type="button" class="start-btn" @click="startConsultation">
+              <span>开始咨询</span>
+              <ArrowRight :size="16" aria-hidden="true" />
+            </button>
           </div>
         </div>
 
-        <div class="vital-card">
-          <span>AI 预问诊</span>
-          <strong>风险分级</strong>
-          <div class="pulse-line"></div>
-        </div>
-
-        <div class="pharmacy-card">
-          <span>统一咨询入口</span>
-          <div class="capsules">
-            <i></i>
-            <i></i>
-            <i></i>
+        <!-- Recommend questions -->
+        <div class="recommend-questions">
+          <span class="recommend-label">您可以试着问：</span>
+          <div class="recommend-list">
+            <button
+              v-for="q in recommendedQuestions"
+              :key="q"
+              type="button"
+              class="recommend-pill"
+              @click="handleRecommendClick(q)"
+            >
+              {{ q }}
+            </button>
           </div>
-          <strong>症状 / 药品 / 图片线索</strong>
+        </div>
+
+        <!-- Trust indicators -->
+        <div class="trust-indicators">
+          <div class="trust-item">
+            <ShieldCheck :size="16" aria-hidden="true" />
+            <span>危险症状优先分诊</span>
+          </div>
+          <div class="trust-item">
+            <BookOpen :size="16" aria-hidden="true" />
+            <span>基于知识库可靠检索</span>
+          </div>
+          <div class="trust-item">
+            <AlertTriangle :size="16" aria-hidden="true" />
+            <span>本回答不替代专业诊疗</span>
+          </div>
         </div>
       </div>
-    </section>
+    </header>
 
-    <section class="stats" aria-label="系统数据概览">
-      <article class="stat-card">
-        <strong>{{ stats.knowledge.disease_count }}</strong>
-        <span>常见病知识</span>
-      </article>
+    <!-- Main Features / Category Cards -->
+    <main class="main-content">
+      <section class="features-section" aria-label="核心服务功能">
+        <h2 class="section-title">核心辅助功能</h2>
+        <div class="features-grid">
+          <article class="feature-card" @click="router.push('/chat')">
+            <div class="feature-icon-wrap message-wrap">
+              <MessageSquare :size="24" aria-hidden="true" />
+            </div>
+            <h3>AI 症状咨询</h3>
+            <p>通过对话描述身体不适或既往病史，获得结构化分析建议、潜在原因与就医指引。</p>
+            <div class="feature-link">
+              <span>立即体验</span>
+              <ArrowRight :size="16" aria-hidden="true" />
+            </div>
+          </article>
 
-      <article class="stat-card">
-        <strong>{{ stats.knowledge.medicine_count }}</strong>
-        <span>常见药品</span>
-      </article>
+          <article class="feature-card" @click="router.push('/knowledge')">
+            <div class="feature-icon-wrap pills-wrap">
+              <Pill :size="24" aria-hidden="true" />
+            </div>
+            <h3>药品信息查询</h3>
+            <p>快速核对常见药品的适用症、用法用量、特殊人群禁忌与常见不良反应说明。</p>
+            <div class="feature-link">
+              <span>浏览知识库</span>
+              <ArrowRight :size="16" aria-hidden="true" />
+            </div>
+          </article>
 
-      <article class="stat-card">
-        <strong>{{ stats.knowledge.warning_rule_count }}</strong>
-        <span>危险症状规则</span>
-      </article>
+          <article class="feature-card" @click="goToChatWithAction('image')">
+            <div class="feature-icon-wrap camera-wrap">
+              <Camera :size="24" aria-hidden="true" />
+            </div>
+            <h3>图片辅助识别</h3>
+            <p>支持上传药盒包装照片、检验检查单或局部症状照片，作为 AI 调度台的线索输入。</p>
+            <div class="feature-link">
+              <span>去上传</span>
+              <ArrowRight :size="16" aria-hidden="true" />
+            </div>
+          </article>
 
-      <article class="stat-card">
-        <strong>{{ stats.history.total_history }}</strong>
-        <span>累计问答记录</span>
-      </article>
+          <article class="feature-card" @click="router.push('/analytics')">
+            <div class="feature-icon-wrap analytics-wrap">
+              <BarChart2 :size="24" aria-hidden="true" />
+            </div>
+            <h3>数据分析</h3>
+            <p>查看咨询趋势、风险提示、知识库命中与用户反馈，快速了解系统运行与服务质量。</p>
+            <div class="feature-link">
+              <span>查看分析</span>
+              <ArrowRight :size="16" aria-hidden="true" />
+            </div>
+          </article>
+        </div>
+      </section>
 
-      <article class="stat-card warning">
-        <strong>{{ stats.history.warning_count }}</strong>
-        <span>危险提醒次数</span>
-      </article>
+      <!-- Security Notice -->
+      <section class="notice-section">
+        <strong>安全声明：</strong>
+        本系统所包含的疾病常识、药品常识和 AI 生成的健康分析意见均仅作为信息参考，不构成医疗诊断或具体的用药指导。如果您的症状较为严重或持续恶化，请务必立即就医或联系急救服务。
+      </section>
 
-      <article class="stat-card">
-        <strong>{{ stats.history.rag_count }}</strong>
-        <span>RAG 检索问答</span>
-      </article>
-    </section>
-
-    <section class="workflow">
-      <div class="section-heading">
-        <p class="eyebrow">CLINICAL WORKFLOW</p>
-        <h2>从用户输入到可靠回答的 Agent 流程</h2>
-      </div>
-
-      <div class="route-grid">
-        <article
-          v-for="item in clinicalRoutes"
-          :key="item.title"
-          class="route-card"
-        >
-          <span>{{ item.step }}</span>
-          <h3>{{ item.title }}</h3>
-          <p>{{ item.description }}</p>
-        </article>
-      </div>
-    </section>
-
-    <section class="pharmacy-band" aria-labelledby="pharmacy-title">
-      <div>
-        <p class="eyebrow">AGENT WORKSPACE</p>
-        <h2 id="pharmacy-title">把独立功能收束到一个对话入口</h2>
-        <p>
-          用户不需要区分症状咨询、用药核对或图片识别，直接在 AI 医疗助手中输入即可。
-          管理员仍可在后台查看 Agent 调度、检索日志和知识库补充入口。
-        </p>
-      </div>
-
-      <div class="pharmacy-list">
-        <article
-          v-for="item in pharmacyHighlights"
-          :key="item.title"
-          class="pharmacy-item"
-        >
-          <strong>{{ item.title }}</strong>
-          <span>{{ item.description }}</span>
-        </article>
-      </div>
-    </section>
-
-    <section class="notice">
-      <strong>安全提示：</strong>
-      本系统仅提供健康信息参考，不能替代医生诊断或药师指导。如症状严重或持续加重，请及时就医。
-    </section>
+    </main>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { cachedGetJson } from '../api'
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import {
+  ShieldCheck,
+  BookOpen,
+  AlertTriangle,
+  MessageSquare,
+  Pill,
+  Camera,
+  ArrowRight,
+  Mic,
+  Image as ImageIcon,
+  BarChart2,
+} from '@lucide/vue'
 
-const stats = ref({
-  knowledge: {
-    disease_count: 0,
-    medicine_count: 0,
-    warning_rule_count: 0,
-    total_knowledge_count: 0,
-  },
-  history: {
-    total_history: 0,
-    warning_count: 0,
-    rag_count: 0,
-  },
-})
+const router = useRouter()
+const homeQuestion = ref('')
 
-const clinicalRoutes = [
-  {
-    step: '01',
-    title: '危险症状预筛查',
-    description: '优先识别胸痛、呼吸困难、意识异常等信号，避免把高风险情况误当作普通咨询。',
-  },
-  {
-    step: '02',
-    title: '常见病知识匹配',
-    description: '结合症状描述检索疾病知识库，返回可能相关方向、护理建议和就医提醒。',
-  },
-  {
-    step: '03',
-    title: '用药安全核对',
-    description: '围绕药品类别、禁忌人群和不良反应进行说明，强调遵医嘱和说明书。',
-  },
+const recommendedQuestions = [
+  '最近总是头痛怎么办？',
+  '布洛芬饭前还是饭后吃？',
+  '感冒和过敏性鼻炎怎么区分？',
+  '儿童发热应该注意什么？',
 ]
 
-const pharmacyHighlights = [
-  {
-    title: '药品类别',
-    description: '解热镇痛、抗过敏、止泻补液等常见类别清晰归档。',
-  },
-  {
-    title: '禁忌人群',
-    description: '儿童、孕妇、老人、慢性病患者等特殊人群重点提示。',
-  },
-  {
-    title: '不良反应',
-    description: '胃肠不适、嗜睡、过敏等风险按字段单独展示。',
-  },
-]
-
-const loadStats = async (force = false) => {
-  try {
-    stats.value = await cachedGetJson('home:stats', '/api/stats/summary', { force })
-  } catch (error) {
-    console.error('统计数据加载失败：', error)
-  }
+const startConsultation = () => {
+  const text = homeQuestion.value.trim()
+  if (!text) return
+  sessionStorage.setItem('home_pending_question', text)
+  router.push('/chat')
 }
 
-onMounted(() => {
-  loadStats()
-})
+const handleRecommendClick = (questionText) => {
+  sessionStorage.setItem('home_pending_question', questionText)
+  router.push('/chat')
+}
+
+const goToChatWithAction = () => {
+  // Direct routes to chat where the composer will get focused
+  router.push('/chat')
+}
+
 </script>
 
 <style scoped>
-.home {
+.home-page {
   display: grid;
-  gap: 28px;
-}
-
-.hero {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
   gap: 36px;
-  align-items: center;
-  overflow: hidden;
-  min-height: 420px;
-  padding: clamp(30px, 5vw, 58px);
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(232, 248, 250, 0.86)),
-    radial-gradient(circle at 85% 20%, rgba(37, 99, 235, 0.16), transparent 30%);
-  border: 1px solid rgba(37, 99, 235, 0.12);
-  border-radius: 8px;
 }
 
-.hero-copy {
-  position: relative;
-  z-index: 1;
-}
-
-.eyebrow {
-  margin-bottom: 10px;
-  color: var(--pharmacy-teal);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0;
-}
-
-.hero h1 {
-  max-width: 640px;
-  color: var(--text-primary);
-  font-size: clamp(34px, 5vw, 56px);
-  font-weight: 900;
-  line-height: 1.08;
-}
-
-.hero-copy > p:not(.eyebrow) {
-  max-width: 680px;
-  margin-top: 20px;
-  color: var(--text-secondary);
-  font-size: 17px;
-  line-height: 1.9;
-}
-
-.actions {
+/* Hero Section with Search bar */
+.hero-section {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 28px;
+  justify-content: center;
+  padding: 48px 24px;
+  background:
+    radial-gradient(circle at 10% 20%, rgba(37, 99, 235, 0.04), transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(13, 148, 136, 0.04), transparent 45%);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background-color: #ffffff;
 }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 46px;
-  padding: 0 20px;
+.hero-container {
+  max-width: 800px;
+  width: 100%;
+  text-align: center;
+}
+
+#hero-title {
+  font-size: clamp(32px, 5vw, 44px);
+  font-weight: 800;
   color: var(--text-primary);
-  text-decoration: none;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+}
+
+.hero-subtitle {
+  margin-top: 14px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 620px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Query card layout */
+.query-card-wrapper {
+  margin-top: 32px;
   background: #ffffff;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
-  font-weight: 800;
-}
-
-.btn.primary {
-  color: #ffffff;
-  background: linear-gradient(135deg, var(--medical-blue), var(--pharmacy-teal));
-  border-color: transparent;
-}
-
-.hero-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 22px;
-}
-
-.hero-tags span {
-  padding: 7px 10px;
-  color: #0f766e;
-  background: #ecfdf5;
-  border: 1px solid #bce7dd;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.hospital-visual {
-  position: relative;
-  min-height: 340px;
-}
-
-.building {
-  position: absolute;
-  right: 24px;
-  bottom: 8px;
-  width: min(320px, 82%);
-  padding: 18px;
-  background: #ffffff;
-  border: 1px solid #cfe3ee;
-  border-radius: 8px;
+  border-radius: 20px;
   box-shadow: var(--shadow-md);
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.building-top {
+.query-card-wrapper:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+.query-textarea {
+  width: 100%;
+  min-height: 72px;
+  border: none;
+  outline: none;
+  resize: none;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.query-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.query-action-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding: 14px;
-  color: #ffffff;
-  background: linear-gradient(135deg, var(--medical-blue), var(--clinical-green));
-  border-radius: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
 }
 
-.building-top span {
-  font-weight: 800;
-}
-
-.building-top svg {
-  width: 28px;
-  height: 28px;
-  fill: currentColor;
-}
-
-.window-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.window-grid i {
-  display: block;
-  height: 46px;
-  background:
-    linear-gradient(180deg, rgba(226, 246, 255, 0.95), rgba(202, 232, 246, 0.8)),
-    #e7f3f8;
-  border: 1px solid #cfe3ee;
-  border-radius: 6px;
-}
-
-.vital-card,
-.pharmacy-card {
-  position: absolute;
-  left: 4px;
-  width: 230px;
-  padding: 16px;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(14, 116, 144, 0.18);
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
-}
-
-.vital-card {
-  top: 20px;
-}
-
-.pharmacy-card {
-  bottom: 26px;
-}
-
-.vital-card span,
-.pharmacy-card span {
-  display: block;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.vital-card strong,
-.pharmacy-card strong {
-  display: block;
-  margin-top: 4px;
-  color: var(--text-primary);
-  font-weight: 900;
-}
-
-.pulse-line {
-  position: relative;
-  height: 46px;
-  margin-top: 10px;
-  overflow: hidden;
-  background: #eef7fb;
-  border-radius: 6px;
-}
-
-.pulse-line::before {
-  position: absolute;
-  inset: 11px 10px;
-  content: "";
-  background:
-    linear-gradient(135deg, transparent 0 16%, var(--danger) 17% 20%, transparent 21% 32%, var(--danger) 33% 36%, transparent 37% 50%, var(--danger) 51% 54%, transparent 55% 100%);
-}
-
-.capsules {
+.action-tools {
   display: flex;
   gap: 8px;
-  margin: 13px 0 10px;
 }
 
-.capsules i {
-  display: block;
-  width: 42px;
-  height: 18px;
-  background: linear-gradient(90deg, #22c55e 50%, #f8fafc 50%);
-  border: 1px solid #b7d4df;
-  border-radius: 999px;
-}
-
-.capsules i:nth-child(2) {
-  background: linear-gradient(90deg, #38bdf8 50%, #f8fafc 50%);
-}
-
-.capsules i:nth-child(3) {
-  background: linear-gradient(90deg, #f59e0b 50%, #f8fafc 50%);
-}
-
-.stats {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 14px;
-}
-
-.stat-card {
-  min-height: 112px;
-  padding: 20px 16px;
-  text-align: center;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
-}
-
-.stat-card strong {
-  display: block;
-  color: var(--medical-blue);
-  font-size: 31px;
-  font-weight: 900;
-  line-height: 1.15;
-}
-
-.stat-card span {
-  display: block;
-  margin-top: 8px;
-  color: var(--text-muted);
-  font-weight: 800;
-}
-
-.stat-card.warning strong {
-  color: var(--danger);
-}
-
-.workflow,
-.pharmacy-band,
-.notice {
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.workflow {
-  padding: 28px;
-}
-
-.section-heading {
-  margin-bottom: 18px;
-}
-
-.section-heading h2,
-.pharmacy-band h2 {
-  color: var(--text-primary);
-  font-size: 24px;
-  font-weight: 900;
-  line-height: 1.3;
-}
-
-.route-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-
-.route-card {
-  padding: 22px;
-  background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
-}
-
-.route-card span {
-  display: inline-grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  color: #ffffff;
-  background: var(--medical-blue);
-  border-radius: 8px;
-  font-weight: 900;
-}
-
-.route-card h3 {
-  margin-top: 16px;
-  color: var(--text-primary);
-  font-size: 18px;
-  font-weight: 900;
-}
-
-.route-card p {
-  margin-top: 8px;
-  color: var(--text-secondary);
-  line-height: 1.8;
-}
-
-.pharmacy-band {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(320px, 1.1fr);
-  gap: 28px;
+.tool-btn {
+  display: inline-flex;
   align-items: center;
-  padding: 28px;
-  background:
-    linear-gradient(135deg, rgba(239, 246, 255, 0.84), rgba(236, 253, 245, 0.84)),
-    #ffffff;
-}
-
-.pharmacy-band p:not(.eyebrow) {
-  margin-top: 10px;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
   color: var(--text-secondary);
-  line-height: 1.85;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.pharmacy-list {
+.tool-btn:hover {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.start-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 18px;
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow-sm);
+}
+
+.start-btn:hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+}
+
+/* Recommend Questions */
+.recommend-questions {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13.5px;
+  text-align: left;
+}
+
+.recommend-label {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.recommend-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.recommend-pill {
+  padding: 6px 12px;
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.recommend-pill:hover {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+/* Trust Indicators */
+.trust-indicators {
+  margin-top: 36px;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+
+.trust-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.trust-item svg {
+  color: var(--teal);
+}
+
+/* Main Content Page */
+.main-content {
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+}
+
+/* Features Grid */
+.features-section {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  gap: 20px;
 }
 
-.pharmacy-item {
-  min-height: 132px;
-  padding: 18px;
+.section-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+.feature-card {
   background: #ffffff;
-  border: 1px solid #cfe3ee;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-sm);
 }
 
-.pharmacy-item strong {
-  display: block;
-  color: var(--pharmacy-teal);
-  font-size: 17px;
-  font-weight: 900;
+.feature-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--primary);
 }
 
-.pharmacy-item span {
-  display: block;
-  margin-top: 8px;
+.feature-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.message-wrap {
+  background: #eff6ff;
+  color: var(--primary);
+}
+
+.pills-wrap {
+  background: #f0fdfa;
+  color: var(--teal);
+}
+
+.camera-wrap {
+  background: #f0fdfa;
+  color: var(--teal);
+}
+
+.analytics-wrap {
+  color: #7c3aed;
+  background: #f5f3ff;
+}
+
+.feature-card h3 {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.feature-card p {
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--text-secondary);
+  margin-bottom: 24px;
+  flex: 1;
+}
+
+.feature-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--primary);
+  margin-top: auto;
+}
+
+.feature-card:hover .feature-link {
+  color: var(--primary-hover);
+}
+
+/* Notice Warning */
+.notice-section {
+  padding: 16px 20px;
+  background: var(--warning-soft);
+  color: var(--warning-text);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
   line-height: 1.7;
 }
 
-.notice {
-  padding: 18px 22px;
-  color: #92400e;
-  background: #fff7ed;
-  border-color: #fed7aa;
-  line-height: 1.8;
-}
-
-.notice strong {
-  font-weight: 900;
-}
-
-@media (max-width: 980px) {
-  .hero,
-  .pharmacy-band {
-    grid-template-columns: 1fr;
-  }
-
-  .hospital-visual {
-    min-height: 300px;
-  }
-
-  .stats {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .route-grid,
-  .pharmacy-list {
-    grid-template-columns: 1fr;
+@media (max-width: 1050px) {
+  .features-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
 @media (max-width: 640px) {
-  .hero,
-  .workflow,
-  .pharmacy-band {
-    padding: 22px;
+  .features-grid {
+    grid-template-columns: 1fr;
   }
 
-  .hero h1 {
-    font-size: 32px;
+  .query-action-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
   }
-
-  .hospital-visual {
-    min-height: 330px;
+  .action-tools {
+    justify-content: space-between;
   }
-
-  .building {
-    right: 0;
-    width: 92%;
+  .start-btn {
+    justify-content: center;
   }
-
-  .vital-card,
-  .pharmacy-card {
-    left: 0;
-    width: 210px;
-  }
-
-  .stats {
-    grid-template-columns: repeat(2, 1fr);
+  .trust-indicators {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
   }
 }
 </style>

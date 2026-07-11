@@ -1,38 +1,70 @@
 :root {
-  --page-bg: #f7fafc;
+  /* Stitch · Clinical Precision */
+  --page-bg: #f7f9fb;
   --surface: #ffffff;
-  --surface-soft: #f1f8fb;
-  --surface-tint: #eef9f6;
-  --border: #dbe7ef;
-  --border-strong: #b8d3e0;
-  --text-primary: #102033;
-  --text-secondary: #40556d;
-  --text-muted: #66778d;
-  --medical-blue: #2563eb;
-  --medical-blue-dark: #1d4ed8;
-  --clinical-green: #0f9f8e;
-  --pharmacy-teal: #0e7490;
-  --medicine-amber: #d97706;
+  --surface-soft: #f2f4f6;
+  --surface-tint: #eef0ff;
+  --surface-container-low: #f2f4f6;
+  --surface-container: #eceef0;
+  --surface-container-high: #e6e8ea;
+
+  --text-primary: #191c1e;
+  --text-secondary: #424656;
+  --text-muted: #727687;
+
+  --primary: #0050cb;
+  --primary-hover: #003fa4;
+  --primary-bright: #0066ff;
+  --primary-soft: #eef0ff;
+
+  --teal: #006b5c;
+  --teal-bright: #00bfa5;
+  --teal-soft: #e9fff8;
+
+  /* 语义色 */
   --danger: #dc2626;
   --danger-soft: #fef2f2;
-  --danger-border: #fecaca;
-  --warning-text: #92400e;
+  --danger-border: #fee2e2;
+  --warning: #d97706;
+  --warning-text: #b45309;
   --warning-soft: #fff7ed;
-  --warning-border: #fed7aa;
-  --success-text: #166534;
+  --warning-border: #ffedd5;
+  --success: #16a34a;
+  --success-text: #15803d;
   --success-soft: #f0fdf4;
-  --success-border: #bbf7d0;
-  --info-text: #1d4ed8;
-  --info-soft: #eff6ff;
+  --success-border: #dcfce7;
+
+  /* 旧命名映射以保证向后兼容 */
+  --medical-blue: var(--primary);
+  --medical-blue-dark: var(--primary-hover);
+  --clinical-green: var(--teal);
+  --pharmacy-teal: var(--teal);
+  --medicine-amber: var(--warning);
+  --info-text: var(--primary);
+  --info-soft: var(--primary-soft);
   --info-border: #bfdbfe;
-  --radius-xs: 6px;
-  --radius-sm: 8px;
+
+  /* 边框与阴影 */
+  --border: #dfe3ea;
+  --border-strong: #c2c6d8;
+  --outline-variant: #c2c6d8;
+  --shadow-sm: 0 4px 16px rgba(25, 28, 30, 0.045);
+  --shadow-md: 0 4px 20px rgba(25, 28, 30, 0.08);
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
   --radius-pill: 999px;
+
+  --sidebar-width: 260px;
+  --topbar-height: 80px;
+  --container-max: 1440px;
+
+  /* 控件高度 */
   --control-height-sm: 36px;
   --control-height-md: 40px;
   --control-height-lg: 46px;
-  --shadow-sm: 0 8px 20px rgba(15, 23, 42, 0.06);
-  --shadow-md: 0 18px 44px rgba(15, 23, 42, 0.1);
 }
 
 *,
@@ -59,8 +91,8 @@ body {
     "Segoe UI",
     Arial,
     sans-serif;
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: 16px;
+  line-height: 1.7;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

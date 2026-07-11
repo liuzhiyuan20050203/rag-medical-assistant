@@ -1,52 +1,79 @@
 <template>
-  <div class="page">
-    <div class="page-title ui-page-heading">
-      <h2>系统知识库</h2>
-      <p>
-        本页面展示系统当前内置的常见病知识库、药品知识库和危险症状规则库。
-        AI 医疗助手会基于这些知识内容进行检索和回答。
-      </p>
-      <button type="button" class="refresh-btn ui-button ui-button--soft" @click="loadKnowledge(true)" :disabled="loading">
-        <RefreshCw :class="{ spin: loading }" :size="16" aria-hidden="true" />
-        {{ loading ? '刷新中...' : '刷新数据' }}
-      </button>
+  <div class="knowledge-page">
+    <!-- Header -->
+    <header class="page-title ui-page-heading">
+      <span class="page-kicker">MEDICAL KNOWLEDGE BASE</span>
+      <div class="heading-row">
+        <div>
+          <h2>知识库</h2>
+          <p>
+            检索常见疾病、常用药品与危险警示规则。AI 咨询会依据这里的内容组织更可靠、更安全的参考建议。
+          </p>
+        </div>
+        <button type="button" class="refresh-btn ui-button ui-button--soft" @click="loadKnowledge(true)" :disabled="loading">
+          <RefreshCw :class="{ spin: loading }" :size="16" aria-hidden="true" />
+          {{ loading ? '正在同步...' : '同步数据' }}
+        </button>
+      </div>
+    </header>
+
+    <!-- Search & Filter Tab Area -->
+    <div class="filter-toolbar">
+      <div class="search-input-box">
+        <Search :size="18" class="search-icon" aria-hidden="true" />
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="搜索疾病、症状、药品用途或成份..."
+          aria-label="检索知识库"
+        />
+        <button v-if="searchQuery" type="button" class="clear-search-btn" @click="searchQuery = ''">
+          <X :size="16" aria-hidden="true" />
+        </button>
+      </div>
+
+      <div class="tabs ui-tabs">
+        <button
+          class="ui-tab"
+          :class="{ active: activeTab === 'all' }"
+          @click="activeTab = 'all'"
+        >
+          全部知识
+        </button>
+        <button
+          class="ui-tab"
+          :class="{ active: activeTab === 'disease' }"
+          @click="activeTab = 'disease'"
+        >
+          常见疾病
+        </button>
+        <button
+          class="ui-tab"
+          :class="{ active: activeTab === 'medicine' }"
+          @click="activeTab = 'medicine'"
+        >
+          常用药品
+        </button>
+        <button
+          class="ui-tab"
+          :class="{ active: activeTab === 'warning' }"
+          @click="activeTab = 'warning'"
+        >
+          危险警示词
+        </button>
+      </div>
     </div>
 
-    <div class="tabs ui-tabs">
-      <button
-        class="ui-tab"
-        :class="{ active: activeTab === 'disease' }"
-        @click="setTab('disease')"
-      >
-        常见病知识库
-      </button>
-
-      <button
-        class="ui-tab"
-        :class="{ active: activeTab === 'medicine' }"
-        @click="setTab('medicine')"
-      >
-        药品知识库
-      </button>
-
-      <button
-        class="ui-tab"
-        :class="{ active: activeTab === 'warning' }"
-        @click="setTab('warning')"
-      >
-        危险症状规则库
-      </button>
-    </div>
-
+    <!-- Loading empty states -->
     <div v-if="loading" class="loading ui-empty">
-      数据加载中...
+      正在加载知识库数据，请稍候...
     </div>
 
     <section v-if="!loading" class="content-section">
       <div class="section-header">
         <div>
           <h3>{{ activeLabel }}</h3>
-          <span>共 {{ currentTotal }} 条，当前显示 {{ displayStart }}-{{ displayEnd }} 条</span>
+          <span>共 {{ currentTotal }} 条结果，显示第 {{ displayStart }} 至 {{ displayEnd }} 条</span>
         </div>
 
         <label class="page-size-control">
@@ -61,90 +88,37 @@
       </div>
 
       <div v-if="currentTotal === 0" class="ui-empty">
-        暂无知识库内容。
+        未找到匹配的知识条目，请换个词重新搜索。
       </div>
 
-      <div v-else class="knowledge-list">
+      <!-- Card Grid -->
+      <div v-else class="knowledge-grid">
         <article
           v-for="(item, index) in pagedItems"
           :key="knowledgeKey(item, index)"
-          class="knowledge-row ui-card"
-          :class="{ 'knowledge-row--warning': activeTab === 'warning' }"
+          class="knowledge-card ui-card"
+          :class="[`card-type-${item.type}`]"
         >
-          <template v-if="activeTab === 'disease'">
-            <div class="row-head">
-              <div class="title-wrap">
-                <span class="row-index">{{ startIndex + index + 1 }}</span>
-                <h4>{{ item.name }}</h4>
-              </div>
-              <span class="ui-badge ui-badge--info">{{ fieldText(item.category) }}</span>
+          <div class="card-head">
+            <div class="title-wrap">
+              <span class="row-index">{{ startIndex + index + 1 }}</span>
+              <h4>{{ item.name }}</h4>
             </div>
+            <span :class="['type-badge', `badge-${item.type}`]">{{ item.tag }}</span>
+          </div>
 
-            <p class="row-summary">{{ fieldText(item.description) }}</p>
+          <p class="card-summary">{{ item.summary }}</p>
 
-            <dl class="knowledge-fields">
-              <div>
-                <dt>常见症状</dt>
-                <dd>{{ fieldText(item.symptoms) }}</dd>
-              </div>
-              <div>
-                <dt>护理建议</dt>
-                <dd>{{ fieldText(item.care_advice) }}</dd>
-              </div>
-              <div>
-                <dt>用药注意</dt>
-                <dd>{{ fieldText(item.medicine_notice) }}</dd>
-              </div>
-              <div>
-                <dt>就医提醒</dt>
-                <dd>{{ fieldText(item.warning) }}</dd>
-              </div>
-            </dl>
-          </template>
-
-          <template v-else-if="activeTab === 'medicine'">
-            <div class="row-head">
-              <div class="title-wrap">
-                <span class="row-index">{{ startIndex + index + 1 }}</span>
-                <h4>{{ item.name }}</h4>
-              </div>
-              <span class="ui-badge ui-badge--info">{{ fieldText(item.type) }}</span>
-            </div>
-
-            <dl class="knowledge-fields">
-              <div>
-                <dt>适用情况</dt>
-                <dd>{{ fieldText(item.usage) }}</dd>
-              </div>
-              <div>
-                <dt>注意事项</dt>
-                <dd>{{ fieldText(item.notice) }}</dd>
-              </div>
-              <div>
-                <dt>禁忌人群</dt>
-                <dd>{{ fieldText(item.contraindication) }}</dd>
-              </div>
-              <div>
-                <dt>不良反应</dt>
-                <dd>{{ fieldText(item.side_effect) }}</dd>
-              </div>
-            </dl>
-          </template>
-
-          <template v-else>
-            <div class="row-head">
-              <div class="title-wrap">
-                <span class="row-index">{{ startIndex + index + 1 }}</span>
-                <h4>{{ item }}</h4>
-              </div>
-              <span class="ui-badge ui-badge--danger">危险规则</span>
-            </div>
-
-            <p class="row-summary">命中后优先返回就医提醒。</p>
-          </template>
+          <div class="card-footer">
+            <button type="button" class="details-link-btn" @click="selectedItem = item">
+              <span>查看详情</span>
+              <ChevronRight :size="16" aria-hidden="true" />
+            </button>
+          </div>
         </article>
       </div>
 
+      <!-- Pagination footer -->
       <nav v-if="currentTotal > 0" class="pagination-bar" aria-label="知识库分页">
         <span>第 {{ currentPage }} / {{ totalPages }} 页</span>
 
@@ -154,7 +128,7 @@
             title="第一页"
             aria-label="第一页"
             :disabled="currentPage === 1"
-            @click="setPage(1)"
+            @click="currentPage = 1"
           >
             <ChevronsLeft :size="18" aria-hidden="true" />
           </button>
@@ -163,7 +137,7 @@
             title="上一页"
             aria-label="上一页"
             :disabled="currentPage === 1"
-            @click="setPage(currentPage - 1)"
+            @click="currentPage = currentPage - 1"
           >
             <ChevronLeft :size="18" aria-hidden="true" />
           </button>
@@ -175,7 +149,7 @@
             class="page-number"
             :class="{ active: page === currentPage }"
             :aria-label="`第 ${page} 页`"
-            @click="setPage(page)"
+            @click="currentPage = page"
           >
             {{ page }}
           </button>
@@ -185,7 +159,7 @@
             title="下一页"
             aria-label="下一页"
             :disabled="currentPage === totalPages"
-            @click="setPage(currentPage + 1)"
+            @click="currentPage = currentPage + 1"
           >
             <ChevronRight :size="18" aria-hidden="true" />
           </button>
@@ -194,88 +168,198 @@
             title="最后一页"
             aria-label="最后一页"
             :disabled="currentPage === totalPages"
-            @click="setPage(totalPages)"
+            @click="currentPage = totalPages"
           >
             <ChevronsRight :size="18" aria-hidden="true" />
           </button>
         </div>
       </nav>
-
-      <div v-if="activeTab === 'warning'" class="notice ui-alert ui-alert--warning">
-        当用户输入内容中包含以上危险症状关键词时，系统会优先返回就医提醒，
-        不再进行普通健康咨询回答。
-      </div>
     </section>
+
+    <!-- Detail Sliding Drawer overlay -->
+    <Transition name="slide-fade">
+      <div v-if="selectedItem" class="drawer-overlay" @click="selectedItem = null">
+        <div class="drawer-content" @click.stop>
+          <header class="drawer-header">
+            <div class="drawer-title-wrap">
+              <span :class="['type-badge', `badge-${selectedItem.type}`]">
+                {{ selectedItem.type === 'disease' ? '常见疾病' : selectedItem.type === 'medicine' ? '常用药品' : '危险警示词' }}
+              </span>
+              <h3>{{ selectedItem.name }}</h3>
+            </div>
+            <button type="button" class="close-drawer-btn" title="关闭详情" @click="selectedItem = null">
+              <X :size="20" aria-hidden="true" />
+            </button>
+          </header>
+
+          <div class="drawer-body">
+            <!-- Disease Detail Layout -->
+            <template v-if="selectedItem.type === 'disease'">
+              <div class="detail-group">
+                <label>疾病常识描述</label>
+                <p>{{ fieldText(selectedItem.raw.description) }}</p>
+              </div>
+              <div class="detail-group">
+                <label>常见症状特征</label>
+                <p class="highlight-text">{{ fieldText(selectedItem.raw.symptoms) }}</p>
+              </div>
+              <div class="detail-group">
+                <label>日常护理方案</label>
+                <p>{{ fieldText(selectedItem.raw.care_advice) }}</p>
+              </div>
+              <div class="detail-group">
+                <label>用药注意细节</label>
+                <p>{{ fieldText(selectedItem.raw.medicine_notice) }}</p>
+              </div>
+              <div class="detail-group danger-notice">
+                <label>⚠️ 安全就医提醒</label>
+                <p>{{ fieldText(selectedItem.raw.warning) }}</p>
+              </div>
+            </template>
+
+            <!-- Medicine Detail Layout -->
+            <template v-else-if="selectedItem.type === 'medicine'">
+              <div class="detail-group">
+                <label>药品分类</label>
+                <p>{{ fieldText(selectedItem.raw.type) }}</p>
+              </div>
+              <div class="detail-group">
+                <label>临床主要用途</label>
+                <p class="highlight-text">{{ fieldText(selectedItem.raw.usage) }}</p>
+              </div>
+              <div class="detail-group">
+                <label>服用禁忌人群</label>
+                <p class="warning-text">{{ fieldText(selectedItem.raw.contraindication) }}</p>
+              </div>
+              <div class="detail-group">
+                <label>可能发生的不良反应</label>
+                <p>{{ fieldText(selectedItem.raw.side_effect) }}</p>
+              </div>
+              <div class="detail-group">
+                <label>日常使用注意事项</label>
+                <p>{{ fieldText(selectedItem.raw.notice) }}</p>
+              </div>
+            </template>
+
+            <!-- Warning Detail Layout -->
+            <template v-else>
+              <div class="detail-group danger-notice">
+                <label>⚠️ 危险分诊判定规则</label>
+                <p>
+                  该词条被系统定义为「危险症状规则」核心监测词。当用户描述的病情症状中包含此名词（如胸痛、呼吸困难等紧急病征）时，AI 会首先匹配就医分诊哨兵逻辑，直接输出就医警示，保障高危病情能引起用户的足够重视并及时就医。
+                </p>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   RefreshCw,
+  Search,
+  X,
 } from '@lucide/vue'
 import { cachedGetJson } from '../api'
 
-const activeTab = ref('disease')
 const loading = ref(false)
+const searchQuery = ref('')
+const activeTab = ref('all')
+const selectedItem = ref(null)
 
 const diseases = ref([])
 const medicines = ref([])
 const warningRules = ref([])
-const currentPageByTab = reactive({
-  disease: 1,
-  medicine: 1,
-  warning: 1,
-})
-const pageSizeByTab = reactive({
-  disease: 8,
-  medicine: 8,
-  warning: 16,
-})
 
-const tabLabels = {
-  disease: '常见病知识库',
-  medicine: '药品知识库',
-  warning: '危险症状规则库',
-}
+const currentPage = ref(1)
+const pageSize = ref(8)
 const pageSizeOptions = [6, 8, 12, 16, 24]
 
+const tabLabels = {
+  all: '全部知识',
+  disease: '常见疾病常识库',
+  medicine: '常用药品说明库',
+  warning: '高危分诊规则库',
+}
+
 const activeLabel = computed(() => tabLabels[activeTab.value])
-const currentItems = computed(() => {
-  if (activeTab.value === 'medicine') {
-    return medicines.value
+
+// Build unified items
+const unifiedItems = computed(() => {
+  const result = []
+
+  // Diseases mapping
+  diseases.value.forEach(item => {
+    result.push({
+      type: 'disease',
+      name: item.name,
+      tag: item.category || '常见病',
+      summary: item.description || '暂无疾病描述信息。',
+      raw: item
+    })
+  })
+
+  // Medicines mapping
+  medicines.value.forEach(item => {
+    result.push({
+      type: 'medicine',
+      name: item.name,
+      tag: item.type || '非处方药',
+      summary: item.usage || '暂无说明用途。',
+      raw: item
+    })
+  })
+
+  // Warning rules mapping
+  warningRules.value.forEach(item => {
+    result.push({
+      type: 'warning',
+      name: item,
+      tag: '高危警示',
+      summary: `危险症状筛查规则：当描述病情触发包含“${item}”在内的敏感词时，将触发分诊策略。`,
+      raw: item
+    })
+  })
+
+  return result
+})
+
+// Dynamic search & category filter
+const filteredItems = computed(() => {
+  let list = unifiedItems.value
+
+  if (activeTab.value !== 'all') {
+    list = list.filter(item => item.type === activeTab.value)
   }
 
-  if (activeTab.value === 'warning') {
-    return warningRules.value
+  const query = searchQuery.value.trim().toLowerCase()
+  if (query) {
+    list = list.filter(item =>
+      item.name.toLowerCase().includes(query) ||
+      item.summary.toLowerCase().includes(query) ||
+      item.tag.toLowerCase().includes(query)
+    )
   }
 
-  return diseases.value
+  return list
 })
-const currentTotal = computed(() => currentItems.value.length)
-const pageSize = computed({
-  get: () => pageSizeByTab[activeTab.value],
-  set: (value) => {
-    pageSizeByTab[activeTab.value] = Number(value) || 8
-    currentPageByTab[activeTab.value] = 1
-  },
-})
+
+// Pagination
+const currentTotal = computed(() => filteredItems.value.length)
 const totalPages = computed(() => Math.max(1, Math.ceil(currentTotal.value / pageSize.value)))
-const currentPage = computed({
-  get: () => Math.min(currentPageByTab[activeTab.value], totalPages.value),
-  set: (value) => {
-    const nextPage = Number(value) || 1
-    currentPageByTab[activeTab.value] = Math.min(Math.max(nextPage, 1), totalPages.value)
-  },
-})
 const startIndex = computed(() => (currentPage.value - 1) * pageSize.value)
 const displayStart = computed(() => (currentTotal.value > 0 ? startIndex.value + 1 : 0))
 const displayEnd = computed(() => Math.min(currentTotal.value, startIndex.value + pageSize.value))
-const pagedItems = computed(() => currentItems.value.slice(startIndex.value, startIndex.value + pageSize.value))
+const pagedItems = computed(() => filteredItems.value.slice(startIndex.value, startIndex.value + pageSize.value))
+
 const visiblePageNumbers = computed(() => {
   const maxVisible = 5
   let firstPage = Math.max(1, currentPage.value - 2)
@@ -285,14 +369,6 @@ const visiblePageNumbers = computed(() => {
 
   return Array.from({ length: lastPage - firstPage + 1 }, (_, index) => firstPage + index)
 })
-
-const setTab = (tab) => {
-  activeTab.value = tab
-}
-
-const setPage = (page) => {
-  currentPage.value = page
-}
 
 const fieldText = (value) => {
   if (Array.isArray(value)) {
@@ -304,19 +380,7 @@ const fieldText = (value) => {
 
 const knowledgeKey = (item, index) => {
   const absoluteIndex = startIndex.value + index
-
-  if (activeTab.value === 'warning') {
-    return `warning-${item}-${absoluteIndex}`
-  }
-
-  return item.id || `${activeTab.value}-${item.name}-${absoluteIndex}`
-}
-
-const clampCurrentPage = () => {
-  currentPageByTab[activeTab.value] = Math.min(
-    Math.max(currentPageByTab[activeTab.value], 1),
-    totalPages.value,
-  )
+  return `${item.type}-${item.name}-${absoluteIndex}`
 }
 
 const loadKnowledge = async (force = false) => {
@@ -332,17 +396,15 @@ const loadKnowledge = async (force = false) => {
     diseases.value = diseaseData.data || []
     medicines.value = medicineData.data || []
     warningRules.value = warningData.data || []
-    clampCurrentPage()
   } catch (error) {
-    alert('知识库加载失败，请检查后端服务是否正常运行。')
     console.error(error)
   } finally {
     loading.value = false
   }
 }
 
-watch([activeTab, currentTotal, pageSize], () => {
-  clampCurrentPage()
+watch([activeTab, searchQuery, pageSize], () => {
+  currentPage.value = 1
 })
 
 onMounted(() => {
@@ -351,214 +413,347 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.knowledge-page {
+  display: grid;
+  gap: 24px;
+}
+
 .page-title {
-  margin-bottom: 24px;
+  position: relative;
+  margin-bottom: 0;
+  padding: 26px 28px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 92% 12%, rgba(13, 148, 136, 0.13), transparent 30%),
+    linear-gradient(135deg, rgba(239, 246, 255, 0.95), rgba(255, 255, 255, 0.96) 55%, rgba(240, 253, 250, 0.82));
+  border: 1px solid #dce7f2;
+  border-radius: 22px;
+  box-shadow: 0 18px 45px rgba(27, 57, 91, 0.07);
+}
+
+.page-kicker {
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+}
+
+.heading-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.heading-row p {
+  margin-top: 8px;
 }
 
 .refresh-btn {
-  gap: 7px;
-  margin-top: 14px;
-  min-height: 38px;
-  padding: 0 14px;
+  flex: 0 0 auto;
   width: fit-content;
+  background: rgba(255, 255, 255, 0.84);
+  backdrop-filter: blur(10px);
 }
 
-.refresh-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+/* Search bar styling */
+.filter-toolbar {
+  display: grid;
+  grid-template-columns: minmax(280px, 440px) 1fr;
+  align-items: center;
+  gap: 20px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(14px);
+}
+
+.search-input-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0 12px;
+  min-height: 40px;
+  box-shadow: none;
+}
+
+.search-input-box:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+.search-icon {
+  color: var(--text-muted);
+  margin-right: 8px;
+}
+
+.search-input-box input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 14.5px;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.clear-search-btn {
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+}
+
+.clear-search-btn:hover {
+  color: var(--danger);
+}
+
+.filter-toolbar .tabs {
+  justify-content: flex-end;
+  margin-bottom: 0;
+}
+
+.filter-toolbar .ui-tab {
+  min-height: 38px;
+  padding: 0 13px;
+  font-size: 13px;
 }
 
 .content-section {
   display: grid;
   gap: 16px;
-  margin-top: 10px;
 }
 
 .section-header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: flex-end;
   gap: 16px;
-  padding-bottom: 6px;
 }
 
 .section-header h3 {
-  font-size: 22px;
   color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 900;
 }
 
 .section-header span {
-  display: block;
-  margin-top: 4px;
-  color: var(--medical-blue);
+  color: var(--text-muted);
+  font-size: 13px;
   font-weight: 700;
 }
 
 .page-size-control {
-  display: inline-flex;
-  flex: 0 0 auto;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  color: var(--text-secondary);
-  font-weight: 800;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .page-size-control select {
-  min-width: 76px;
-  min-height: 38px;
-  padding: 0 10px;
-  color: var(--text-primary);
-  background: var(--surface);
+  min-height: 36px;
+  padding: 0 28px 0 10px;
+  color: var(--text-secondary);
+  background: #fff;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  outline: none;
+  border-radius: 9px;
+  outline: 0;
   font-weight: 800;
 }
 
-.page-size-control select:focus {
-  border-color: var(--medical-blue);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-.knowledge-list {
+/* Category list styling */
+.knowledge-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
 }
 
-.knowledge-row {
-  display: grid;
-  gap: 12px;
-  padding: 18px;
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease,
-    transform 0.2s ease;
+.knowledge-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  min-height: 160px;
+  overflow: hidden;
+  background: linear-gradient(145deg, #ffffff, #fbfdff);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.knowledge-row:hover {
-  border-color: var(--border-strong);
+.knowledge-card::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  content: '';
+  background: var(--primary);
+  opacity: 0.8;
+}
+
+.knowledge-card.card-type-medicine::before {
+  background: var(--teal);
+}
+
+.knowledge-card.card-type-warning::before {
+  background: var(--danger);
+}
+
+.knowledge-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary);
   box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
 }
 
-.knowledge-row--warning {
-  border-color: var(--danger-border);
-  background: linear-gradient(90deg, var(--danger-soft), var(--surface) 46%);
-}
-
-.row-head {
+.card-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 12px;
 }
 
 .title-wrap {
   display: flex;
-  min-width: 0;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .row-index {
   display: inline-grid;
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
+  width: 26px;
+  height: 26px;
   place-items: center;
-  color: var(--medical-blue);
-  background: var(--info-soft);
-  border: 1px solid var(--info-border);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-weight: 900;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-radius: var(--radius-xs);
+  flex: 0 0 auto;
 }
 
 .title-wrap h4 {
-  min-width: 0;
+  font-size: 16.5px;
+  font-weight: 800;
   color: var(--text-primary);
-  font-size: 18px;
-  font-weight: 900;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.row-summary {
+.type-badge {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.badge-disease {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border: 1px solid #bfdbfe;
+}
+
+.badge-medicine {
+  background: var(--teal-soft);
+  color: var(--teal);
+  border: 1px solid #99f6e4;
+}
+
+.badge-warning {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+}
+
+.card-summary {
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--text-secondary);
-  line-height: 1.75;
-  overflow-wrap: anywhere;
+  margin: 0 0 16px 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex: 1;
 }
 
-.knowledge-fields {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+.card-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
 }
 
-.knowledge-fields div {
-  min-width: 0;
-  padding: 12px;
-  background: #f8fbfd;
-  border: 1px solid #e4edf3;
-  border-radius: var(--radius-sm);
+.details-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  color: var(--primary);
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: color 0.2s;
+  padding: 4px;
+  border-radius: 4px;
 }
 
-.knowledge-fields dt {
-  color: var(--medical-blue);
-  font-size: 13px;
-  font-weight: 900;
+.details-link-btn:hover {
+  color: var(--primary-hover);
 }
 
-.knowledge-fields dd {
-  margin-top: 5px;
-  color: var(--text-secondary);
-  line-height: 1.7;
-  overflow-wrap: anywhere;
-}
-
+/* Pagination */
 .pagination-bar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-  background: var(--surface);
+  padding: 14px 20px;
+  background: #ffffff;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
+  margin-top: 10px;
 }
 
 .pagination-bar > span {
+  font-size: 14px;
   color: var(--text-muted);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .pager-buttons {
   display: flex;
-  flex-wrap: wrap;
   gap: 6px;
 }
 
 .pager-buttons button {
   display: grid;
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   place-items: center;
-  color: var(--text-secondary);
-  background: #f8fafc;
+  background: var(--surface-soft);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
+  color: var(--text-secondary);
   cursor: pointer;
-  font-weight: 900;
+  transition: all 0.2s ease;
 }
 
 .pager-buttons button:hover:not(:disabled),
 .pager-buttons button.active {
   color: #ffffff;
-  background: var(--medical-blue);
-  border-color: var(--medical-blue);
+  background: var(--primary);
+  border-color: var(--primary);
 }
 
 .pager-buttons button:disabled {
@@ -567,11 +762,146 @@ onMounted(() => {
 }
 
 .page-number {
-  font-size: 14px;
+  font-size: 13.5px;
+  font-weight: 700;
 }
 
-.notice {
-  margin-top: 4px;
+/* Drawer Detail Panel (Apple-health overlay style) */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.3);
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.drawer-content {
+  width: min(100%, 480px);
+  height: 100%;
+  background: #ffffff;
+  box-shadow: -10px 0 30px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  padding: 28px;
+  animation: slideIn 0.3s ease-out;
+}
+
+.drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 18px;
+  margin-bottom: 20px;
+}
+
+.drawer-title-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.drawer-title-wrap h3 {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.close-drawer-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.close-drawer-btn:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.detail-group {
+  margin-bottom: 20px;
+}
+
+.detail-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+
+.detail-group p {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.highlight-text {
+  font-weight: 600;
+  color: var(--primary) !important;
+}
+
+.warning-text {
+  font-weight: 600;
+  color: var(--danger) !important;
+}
+
+.danger-notice {
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  padding: 14px;
+  border-radius: 12px;
+  color: #7f1d1d;
+}
+
+.danger-notice label {
+  color: var(--danger);
+}
+
+/* Animations */
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.slide-fade-enter-active,
+.slide-fade-leave-active {
+  transition: all 0.26s ease;
+}
+
+.slide-fade-enter-from,
+.slide-fade-leave-to {
+  opacity: 0;
+}
+
+.slide-fade-enter-from .drawer-content,
+.slide-fade-leave-to .drawer-content {
+  transform: translateX(100%);
 }
 
 .spin {
@@ -584,25 +914,38 @@ onMounted(() => {
   }
 }
 
-@media (max-width: 700px) {
-  .section-header,
-  .row-head,
-  .pagination-bar {
+@media (max-width: 900px) {
+  .filter-toolbar {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .search-input-box {
+    max-width: 100%;
+  }
+
+  .filter-toolbar .tabs {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .page-title {
+    padding: 22px;
+  }
+
+  .heading-row,
+  .section-header {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .page-size-control {
-    justify-content: space-between;
-    width: 100%;
-  }
-
-  .knowledge-fields {
+  .knowledge-grid {
     grid-template-columns: 1fr;
   }
-
-  .pager-buttons {
-    justify-content: center;
+  .pagination-bar {
+    flex-direction: column;
+    gap: 14px;
+    align-items: center;
   }
 }
 </style>
