@@ -597,6 +597,162 @@ def list_agent_runs(user_id=None, limit=50):
     ]
 
 
+def list_agent_run_details(user_id=None, limit=100):
+    """
+    管理后台使用的 Agent 可观测性日志。
+    聚合一次 Agent 运行的步骤、工具、RAG 召回和多模态输入，避免前端再多次请求。
+    """
+    ensure_conversation_tables()
+    runs = list_agent_runs(user_id=user_id, limit=limit)
+    if not runs:
+        return []
+
+    run_ids = [run["id"] for run in runs]
+    placeholders = ",".join(["%s"] * len(run_ids))
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT run_id, step_index, name, status, detail_json, created_at
+                FROM agent_steps
+                WHERE run_id IN ({placeholders})
+                ORDER BY run_id DESC, step_index ASC, id ASC
+                """,
+                run_ids,
+            )
+            step_rows = cursor.fetchall()
+
+            cursor.execute(
+                f"""
+                SELECT run_id, tool_name, success, input_json, output_json, created_at
+                FROM agent_tool_calls
+                WHERE run_id IN ({placeholders})
+                ORDER BY run_id DESC, id ASC
+                """,
+                run_ids,
+            )
+            tool_rows = cursor.fetchall()
+
+            cursor.execute(
+                f"""
+                SELECT run_id, query_text, doc_count, top_score, docs_json, created_at
+                FROM retrieval_logs
+                WHERE run_id IN ({placeholders})
+                ORDER BY run_id DESC, id ASC
+                """,
+                run_ids,
+            )
+            retrieval_rows = cursor.fetchall()
+
+            cursor.execute(
+                f"""
+                SELECT
+                    ar.id AS run_id,
+                    mi.input_type,
+                    mi.text_content,
+                    mi.image_summary,
+                    mi.image_tags_json,
+                    mi.image_result_json
+                FROM agent_runs ar
+                LEFT JOIN multimodal_inputs mi ON mi.message_id = ar.user_message_id
+                WHERE ar.id IN ({placeholders})
+                """,
+                run_ids,
+            )
+            input_rows = cursor.fetchall()
+
+    steps_by_run = {run_id: [] for run_id in run_ids}
+    for row in step_rows:
+        steps_by_run.setdefault(row.get("run_id"), []).append({
+            "index": row.get("step_index"),
+            "name": row.get("name", ""),
+            "status": row.get("status", ""),
+            "detail": json_loads(row.get("detail_json"), {}),
+            "created_at": str(row.get("created_at", "")),
+        })
+
+    tools_by_run = {run_id: [] for run_id in run_ids}
+    for row in tool_rows:
+        tools_by_run.setdefault(row.get("run_id"), []).append({
+            "name": row.get("tool_name", ""),
+            "success": bool(row.get("success")),
+            "input": json_loads(row.get("input_json"), {}),
+            "output": json_loads(row.get("output_json"), {}),
+            "created_at": str(row.get("created_at", "")),
+        })
+
+    retrieval_by_run = {run_id: [] for run_id in run_ids}
+    for row in retrieval_rows:
+        retrieval_by_run.setdefault(row.get("run_id"), []).append({
+            "query_text": row.get("query_text", "") or "",
+            "doc_count": int(row.get("doc_count") or 0),
+            "top_score": float(row.get("top_score") or 0),
+            "docs": json_loads(row.get("docs_json"), []),
+            "created_at": str(row.get("created_at", "")),
+        })
+
+    inputs_by_run = {}
+    for row in input_rows:
+        inputs_by_run[row.get("run_id")] = {
+            "input_type": row.get("input_type", "") or "",
+            "text_content": row.get("text_content", "") or "",
+            "image_summary": row.get("image_summary", "") or "",
+            "image_tags": json_loads(row.get("image_tags_json"), []),
+            "image_result": json_loads(row.get("image_result_json"), {}),
+        }
+
+    detailed_runs = []
+    for run in runs:
+        run_id = run["id"]
+        trace = run.get("trace") or {}
+        steps = steps_by_run.get(run_id) or []
+        tools = tools_by_run.get(run_id) or []
+        retrievals = retrieval_by_run.get(run_id) or []
+        multimodal_input = inputs_by_run.get(run_id) or {}
+        trace_tools = trace.get("used_tools") if isinstance(trace, dict) else []
+        tool_names = {tool.get("name") for tool in tools if tool.get("name")}
+        tool_names.update([name for name in (trace_tools or []) if name])
+
+        input_type = str(multimodal_input.get("input_type") or "").lower()
+        has_image_input = bool(
+            multimodal_input.get("image_summary")
+            or multimodal_input.get("image_tags")
+            or input_type in {"image", "video", "mixed"}
+        )
+        retrieval_doc_count = sum(item.get("doc_count", 0) for item in retrievals)
+        has_rag = "rag_search" in tool_names or bool(retrievals)
+        has_medicine = "medicine_search" in tool_names or run.get("action") == "medicine_query"
+        has_llm = bool(run.get("llm_used")) or "llm_answer" in tool_names
+        has_no_retrieval = has_rag and retrieval_doc_count == 0
+        is_low_confidence = float(run.get("confidence") or 0) < 0.6
+
+        run.update({
+            "steps": steps,
+            "tool_calls": tools,
+            "retrievals": retrievals,
+            "multimodal_input": multimodal_input,
+            "tool_names": sorted(tool_names),
+            "flags": {
+                "low_confidence": is_low_confidence,
+                "no_retrieval": has_no_retrieval,
+                "used_rag": has_rag,
+                "used_image": has_image_input,
+                "used_medicine": has_medicine,
+                "used_llm": has_llm,
+            },
+            "metrics": {
+                "retrieval_doc_count": retrieval_doc_count,
+                "retrieval_top_score": max([item.get("top_score", 0) for item in retrievals] or [0]),
+                "step_count": len(steps),
+                "tool_count": len(tool_names),
+            },
+        })
+        detailed_runs.append(run)
+
+    return detailed_runs
+
+
 def get_latest_session_medicine_topic(session_id, user_id=None):
     """
     从最近一次同会话 RAG/药品检索日志中恢复当前药品主题。

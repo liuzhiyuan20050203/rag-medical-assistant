@@ -11,6 +11,7 @@ BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env", override=True)
 
 _DATABASE_CONTEXT_COLUMN_READY = False
+_REVIEW_COLUMNS_READY = False
 
 
 def get_connection():
@@ -169,6 +170,38 @@ def ensure_database_context_column():
     _DATABASE_CONTEXT_COLUMN_READY = True
 
 
+def ensure_history_review_columns():
+    """
+    给旧版 chat_history 表补齐审核工单状态字段。
+    """
+    global _REVIEW_COLUMNS_READY
+
+    if _REVIEW_COLUMNS_READY:
+        return
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'review_status'")
+            if not cursor.fetchone():
+                cursor.execute(
+                    """
+                    ALTER TABLE chat_history
+                    ADD COLUMN review_status VARCHAR(30) NOT NULL DEFAULT 'pending' AFTER feedback_text
+                    """
+                )
+
+            cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'review_note'")
+            if not cursor.fetchone():
+                cursor.execute(
+                    """
+                    ALTER TABLE chat_history
+                    ADD COLUMN review_note LONGTEXT NULL AFTER review_status
+                    """
+                )
+
+    _REVIEW_COLUMNS_READY = True
+
+
 def row_to_record(row):
     """
     将数据库行转换成前端原来使用的历史记录格式。
@@ -209,6 +242,8 @@ def row_to_record(row):
         "satisfaction": row.get("satisfaction", "") or "",
         "rating": row.get("rating", 0) or 0,
         "feedback_text": row.get("feedback_text", "") or "",
+        "review_status": row.get("review_status", "") or "pending",
+        "review_note": row.get("review_note", "") or "",
         "create_time": format_time(row.get("create_time")),
         "review_time": format_time(row.get("review_time"))
     }
@@ -234,6 +269,7 @@ def save_history(history_list):
     一般情况下不建议主动调用，清空历史请使用 clear_history_records。
     """
     ensure_database_context_column()
+    ensure_history_review_columns()
 
     with get_connection() as conn:
         with conn.cursor() as cursor:
@@ -251,9 +287,10 @@ def save_history(history_list):
                         retrieved_docs, database_context,
                         llm_used, llm_provider, llm_model,
                         is_error, error_reason, satisfaction, rating,
-                        feedback_text, create_time, review_time
+                        feedback_text, review_status, review_note,
+                        create_time, review_time
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         item.get("question", ""),
@@ -270,6 +307,8 @@ def save_history(history_list):
                         item.get("satisfaction", ""),
                         item.get("rating", 0),
                         item.get("feedback_text", ""),
+                        item.get("review_status", "pending"),
+                        item.get("review_note", ""),
                         item.get("create_time") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         item.get("review_time") or None
                     )
@@ -301,6 +340,7 @@ def add_history_record(
     has_warning, warning_keywords = parse_warning_info(warning)
     llm_used, llm_provider, llm_model = parse_llm_info(llm)
     ensure_database_context_column()
+    ensure_history_review_columns()
 
     sql = """
         INSERT INTO chat_history
@@ -319,9 +359,11 @@ def add_history_record(
             error_reason,
             satisfaction,
             rating,
-            feedback_text
+            feedback_text,
+            review_status,
+            review_note
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, '', '', 0, '')
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, '', '', 0, '', 'pending', '')
     """
 
     with get_connection() as conn:
@@ -350,6 +392,8 @@ def get_history_by_id(record_id: int):
     """
     根据 ID 获取单条历史记录。
     """
+    ensure_history_review_columns()
+
     sql = """
         SELECT
             chat_history.*,
@@ -385,6 +429,7 @@ def get_history_list(limit: int = 50, user_id=None):
     except (TypeError, ValueError):
         limit = 50
     limit = max(1, min(limit, 200))
+    ensure_history_review_columns()
 
     params = []
     where_clause = ""
@@ -523,6 +568,9 @@ def classify_review_issue(record):
         or "暂未在药品知识库" in answer
         or "知识库匹配度较低" in answer
     )
+    review_status = record.get("review_status") or ("pending" if needs_review else "processed")
+    if review_status in {"processed", "ignored"}:
+        needs_review = False
 
     return {
         "record_id": record.get("id"),
@@ -543,6 +591,9 @@ def classify_review_issue(record):
         "suggested_fix": suggested_fix,
         "keyword": infer_issue_keyword(record),
         "needs_review": needs_review,
+        "review_status": review_status,
+        "review_note": record.get("review_note", ""),
+        "review_time": record.get("review_time", ""),
         "agent_meta": agent_meta,
     }
 
@@ -592,7 +643,9 @@ def update_history_record(record_id: int, fields: dict, user_id=None):
         "error_reason",
         "satisfaction",
         "rating",
-        "feedback_text"
+        "feedback_text",
+        "review_status",
+        "review_note"
     }
 
     update_fields = {}
@@ -603,6 +656,7 @@ def update_history_record(record_id: int, fields: dict, user_id=None):
     if not update_fields:
         return get_history_by_id(record_id)
 
+    ensure_history_review_columns()
     update_fields["review_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     set_clause = ", ".join([f"{key} = %s" for key in update_fields.keys()])
@@ -641,6 +695,24 @@ def mark_history_error(record_id: int, reason: str = ""):
             "error_reason": reason or "管理员标记为错误回答",
             "satisfaction": "不满意",
             "rating": 1
+        }
+    )
+
+
+def set_review_ticket_status(record_id: int, status: str, note: str = ""):
+    """
+    设置管理员审核工单状态。
+    status: pending / processed / ignored
+    """
+    status = (status or "").strip()
+    if status not in {"pending", "processed", "ignored"}:
+        return None
+
+    return update_history_record(
+        record_id,
+        {
+            "review_status": status,
+            "review_note": (note or "").strip(),
         }
     )
 

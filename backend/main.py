@@ -27,6 +27,7 @@ from history_service import (
     get_review_issue_list,
     clear_history_records,
     mark_history_error,
+    set_review_ticket_status,
     set_history_feedback
 )
 from auth_service import (
@@ -48,6 +49,7 @@ from conversation_service import (
     get_session_detail,
     get_latest_session_medicine_topic,
     list_agent_runs,
+    list_agent_run_details,
     list_sessions,
     record_agent_interaction,
 )
@@ -639,7 +641,7 @@ def admin_agent_runs(_admin: dict = Depends(require_admin)):
     """
     管理员查看 Agent 调度运行日志。
     """
-    runs = list_agent_runs(limit=100)
+    runs = list_agent_run_details(limit=100)
 
     return {
         "count": len(runs),
@@ -657,6 +659,30 @@ def admin_review_issues(only_need_review: bool = False, _admin: dict = Depends(r
     return {
         "count": len(issues),
         "data": issues
+    }
+
+
+@app.post("/api/admin/review/issues/{record_id}/status")
+def admin_review_issue_status(record_id: int, data: dict, _admin: dict = Depends(require_admin)):
+    """
+    管理员更新审核工单状态：pending / processed / ignored。
+    """
+    result = set_review_ticket_status(
+        record_id,
+        data.get("status", ""),
+        data.get("note", "")
+    )
+
+    if not result:
+        return {
+            "success": False,
+            "message": "工单状态更新失败，请检查记录ID或状态值。"
+        }
+
+    return {
+        "success": True,
+        "message": "审核工单状态已更新。",
+        "data": result
     }
 
 
