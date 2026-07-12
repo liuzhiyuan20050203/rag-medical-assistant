@@ -1,8 +1,12 @@
 import hashlib
 import json
+import os
 import secrets
 from pathlib import Path
 from datetime import datetime
+
+import pymysql
+from dotenv import load_dotenv
 
 from storage import is_database_enabled, load_json_data, save_json_data
 
@@ -11,6 +15,28 @@ BASE_DIR = Path(__file__).resolve().parent
 USER_FILE = BASE_DIR / "data" / "users.json"
 SESSION_FILE = BASE_DIR / "data" / "sessions.json"
 PASSWORD_SALT = "rag-medical-assistant-demo"
+PROFILE_DEFAULTS = {
+    "display_name": "",
+    "real_name": "",
+    "email": "",
+    "phone": "",
+    "gender": "",
+    "birthday": "",
+    "bio": "",
+    "avatar": "",
+}
+PROFILE_TEXT_LIMITS = {
+    "display_name": 30,
+    "real_name": 30,
+    "email": 80,
+    "phone": 30,
+    "gender": 20,
+    "birthday": 30,
+    "bio": 200,
+}
+AVATAR_MAX_LENGTH = 420_000
+
+load_dotenv(BASE_DIR / ".env", override=True)
 
 
 def hash_password(password: str):
@@ -21,6 +47,49 @@ def now_text():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def get_connection():
+    return pymysql.connect(
+        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
+        port=int(os.getenv("MYSQL_PORT", "3306")),
+        user=os.getenv("MYSQL_USER", "root"),
+        password=os.getenv("MYSQL_PASSWORD", ""),
+        database=os.getenv("MYSQL_DATABASE", "rag_medical"),
+        charset=os.getenv("MYSQL_CHARSET", "utf8mb4"),
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=True
+    )
+
+
+def ensure_user_identity(user):
+    """
+    将兼容 JSON 存储里的登录用户同步到规范 users 表，返回稳定 user_id。
+    """
+    username = (user or {}).get("username", "").strip()
+    if not username or not is_database_enabled():
+        return None
+
+    password_hash = (user or {}).get("password_hash") or hash_password(secrets.token_urlsafe(12))
+    role = normalize_role((user or {}).get("role", "user"))
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO users (username, password_hash, role)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    password_hash = VALUES(password_hash),
+                    role = VALUES(role),
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (username, password_hash, role)
+            )
+            cursor.execute("SELECT id FROM users WHERE username = %s LIMIT 1", (username,))
+            row = cursor.fetchone()
+
+    return row.get("id") if row else None
+
+
 def default_users():
     return [
         {
@@ -28,6 +97,14 @@ def default_users():
             "password_hash": hash_password("admin123"),
             "role": "admin",
             "active": True,
+            "display_name": "管理员",
+            "real_name": "",
+            "email": "",
+            "phone": "",
+            "gender": "",
+            "birthday": "",
+            "bio": "",
+            "avatar": "",
             "create_time": now_text(),
             "update_time": now_text()
         }
@@ -77,6 +154,10 @@ def load_users():
         if "update_time" not in user:
             user["update_time"] = user.get("create_time", now_text())
             changed = True
+        for key, default_value in PROFILE_DEFAULTS.items():
+            if key not in user:
+                user[key] = user.get("username", "") if key == "display_name" else default_value
+                changed = True
 
     if changed:
         save_users(users)
@@ -112,8 +193,19 @@ def save_sessions(sessions):
 
 
 def public_user(user):
+    user_id = ensure_user_identity(user)
+
     return {
+        "id": user_id,
         "username": user.get("username", ""),
+        "display_name": user.get("display_name") or user.get("username", ""),
+        "real_name": user.get("real_name", ""),
+        "email": user.get("email", ""),
+        "phone": user.get("phone", ""),
+        "gender": user.get("gender", ""),
+        "birthday": user.get("birthday", ""),
+        "bio": user.get("bio", ""),
+        "avatar": user.get("avatar", ""),
         "role": user.get("role", "user"),
         "active": user.get("active", True),
         "create_time": user.get("create_time", ""),
@@ -153,6 +245,14 @@ def register_user(username: str, password: str):
         "password_hash": hash_password(password),
         "role": "user",
         "active": True,
+        "display_name": username,
+        "real_name": "",
+        "email": "",
+        "phone": "",
+        "gender": "",
+        "birthday": "",
+        "bio": "",
+        "avatar": "",
         "create_time": now_text(),
         "update_time": now_text()
     }
@@ -229,6 +329,14 @@ def create_user(username: str, password: str, role: str = "user", active=True):
         "password_hash": hash_password(password),
         "role": normalize_role(role),
         "active": bool(active),
+        "display_name": username,
+        "real_name": "",
+        "email": "",
+        "phone": "",
+        "gender": "",
+        "birthday": "",
+        "bio": "",
+        "avatar": "",
         "create_time": now_text(),
         "update_time": now_text()
     }
@@ -274,9 +382,139 @@ def update_user(username: str, fields: dict):
             return None, "新密码至少6位。"
         target["password_hash"] = hash_password(password)
 
+    for key in PROFILE_DEFAULTS:
+        if key in fields:
+            target[key] = clean_profile_text(key, fields.get(key, ""))
+
     target["update_time"] = now_text()
     save_users(users)
     return public_user(target), "用户更新成功。"
+
+
+def clean_profile_text(key: str, value):
+    text = str(value or "").strip()
+    limit = PROFILE_TEXT_LIMITS.get(key)
+
+    if limit:
+        return text[:limit]
+
+    return text
+
+
+def clean_avatar(value):
+    avatar = str(value or "").strip()
+
+    if not avatar:
+        return ""
+
+    if len(avatar) > AVATAR_MAX_LENGTH:
+        raise ValueError("头像图片过大，请选择更小的图片。")
+
+    if avatar.startswith("data:image/") or avatar.startswith("http://") or avatar.startswith("https://"):
+        return avatar
+
+    raise ValueError("头像格式不支持，请上传图片文件。")
+
+
+def sync_session_username(old_username: str, new_username: str):
+    if old_username == new_username:
+        return
+
+    sessions = load_sessions()
+    changed = False
+
+    for session in sessions.values():
+        if session.get("username") == old_username:
+            session["username"] = new_username
+            changed = True
+
+    if changed:
+        save_sessions(sessions)
+
+
+def sync_normalized_username(old_username: str, new_username: str):
+    if old_username == new_username or not is_database_enabled():
+        return
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE users
+                    SET username = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE username = %s
+                    """,
+                    (new_username, old_username)
+                )
+    except Exception:
+        return
+
+
+def update_current_profile(current_username: str, fields: dict):
+    users = load_users()
+    target = None
+    old_username = (current_username or "").strip()
+
+    for user in users:
+        if user.get("username") == old_username:
+            target = user
+            break
+
+    if not target:
+        return None, "用户不存在。"
+
+    next_username = str(fields.get("username", target.get("username", "")) or "").strip()
+    if len(next_username) < 3:
+        return None, "用户名至少3位。"
+
+    if next_username != old_username and any(item.get("username") == next_username for item in users):
+        return None, "用户名已存在。"
+
+    try:
+        next_avatar = clean_avatar(fields.get("avatar", target.get("avatar", "")))
+    except ValueError as exc:
+        return None, str(exc)
+
+    target["username"] = next_username
+    target["display_name"] = clean_profile_text("display_name", fields.get("display_name", target.get("display_name") or next_username)) or next_username
+    target["real_name"] = clean_profile_text("real_name", fields.get("real_name", target.get("real_name", "")))
+    target["email"] = clean_profile_text("email", fields.get("email", target.get("email", "")))
+    target["phone"] = clean_profile_text("phone", fields.get("phone", target.get("phone", "")))
+    target["gender"] = clean_profile_text("gender", fields.get("gender", target.get("gender", "")))
+    target["birthday"] = clean_profile_text("birthday", fields.get("birthday", target.get("birthday", "")))
+    target["bio"] = clean_profile_text("bio", fields.get("bio", target.get("bio", "")))
+    target["avatar"] = next_avatar
+    target["update_time"] = now_text()
+
+    save_users(users)
+    sync_session_username(old_username, next_username)
+    sync_normalized_username(old_username, next_username)
+    return public_user(target), "个人资料已保存。"
+
+
+def change_current_password(current_username: str, old_password: str, new_password: str):
+    users = load_users()
+    target = None
+
+    for user in users:
+        if user.get("username") == (current_username or "").strip():
+            target = user
+            break
+
+    if not target:
+        return None, "用户不存在。"
+
+    if target.get("password_hash") != hash_password(old_password or ""):
+        return None, "当前密码不正确。"
+
+    if len(new_password or "") < 6:
+        return None, "新密码至少6位。"
+
+    target["password_hash"] = hash_password(new_password)
+    target["update_time"] = now_text()
+    save_users(users)
+    return public_user(target), "密码已修改。"
 
 
 def delete_user(username: str, current_username: str = ""):

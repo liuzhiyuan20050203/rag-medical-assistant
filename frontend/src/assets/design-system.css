@@ -1,0 +1,237 @@
+.ui-page-heading {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.ui-page-heading h1,
+.ui-page-heading h2 {
+  color: var(--text-primary);
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.ui-page-heading p {
+  max-width: 780px;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+.ui-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.ui-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+}
+
+.ui-section {
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: var(--control-height-md);
+  padding: 0 16px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 800;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.ui-button:hover:not(:disabled) {
+  color: var(--medical-blue);
+  background: var(--info-soft);
+  border-color: var(--info-border);
+}
+
+.ui-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ui-button--primary {
+  color: #ffffff;
+  background: var(--medical-blue);
+  border-color: var(--medical-blue);
+}
+
+.ui-button--primary:hover:not(:disabled) {
+  color: #ffffff;
+  background: var(--medical-blue-dark);
+  border-color: var(--medical-blue-dark);
+}
+
+.ui-button--danger {
+  color: #ffffff;
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.ui-button--danger:hover:not(:disabled) {
+  color: #ffffff;
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.ui-button--soft {
+  color: var(--info-text);
+  background: var(--info-soft);
+  border-color: var(--info-border);
+}
+
+.ui-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.ui-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-height-md);
+  padding: 0 16px;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.ui-tab:hover:not(:disabled),
+.ui-tab.active {
+  color: #ffffff;
+  background: var(--medical-blue);
+  border-color: var(--medical-blue);
+}
+
+.ui-empty {
+  padding: 20px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+}
+
+.ui-alert {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  line-height: 1.7;
+}
+
+.ui-alert--warning {
+  color: var(--warning-text);
+  background: var(--warning-soft);
+  border-color: var(--warning-border);
+}
+
+.ui-alert--error {
+  color: #991b1b;
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
+}
+
+.ui-alert--success {
+  color: var(--success-text);
+  background: var(--success-soft);
+  border-color: var(--success-border);
+}
+
+.ui-alert--info {
+  color: var(--info-text);
+  background: var(--info-soft);
+  border-color: var(--info-border);
+}
+
+.ui-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 2px 9px;
+  color: var(--text-secondary);
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ui-badge--info {
+  color: var(--info-text);
+  background: var(--info-soft);
+  border-color: var(--info-border);
+}
+
+.ui-badge--danger {
+  color: #991b1b;
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
+}
+
+.ui-badge--success {
+  color: var(--success-text);
+  background: var(--success-soft);
+  border-color: var(--success-border);
+}
+
+.ui-field,
+.ui-textarea {
+  width: 100%;
+  color: var(--text-primary);
+  background: #f8fbfd;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.ui-field {
+  min-height: var(--control-height-lg);
+  padding: 0 14px;
+}
+
+.ui-textarea {
+  min-height: 88px;
+  padding: 12px 14px;
+  resize: vertical;
+  line-height: 1.7;
+}
+
+.ui-field:focus,
+.ui-textarea:focus {
+  background: var(--surface);
+  border-color: var(--medical-blue);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}

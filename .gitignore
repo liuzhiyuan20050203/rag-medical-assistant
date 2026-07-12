@@ -18,6 +18,13 @@ backend/.env
 # Frontend dependencies and caches
 frontend/node_modules/
 frontend/.vite/
+frontend/dist/
+/node_modules/
+/package.json
+/package-lock.json
+
+# Local Codex working files
+.codex_tmp/
 
 # Logs
 *.log
@@ -25,6 +32,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Local uploaded knowledge drafts/files
+backend/data/uploads/
 
 # IDE and OS
 .idea/

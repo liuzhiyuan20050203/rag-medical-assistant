@@ -1,3 +1,5 @@
+import hashlib
+import os
 import re
 import faiss
 import numpy as np
@@ -9,11 +11,22 @@ index = None
 documents = []
 vocab = []
 term_to_id = {}
+vector_dimension = 4096
+active_index_mode = "keyword"
+configured_index_mode = "keyword"
+active_embedding_model_name = ""
+embedding_model = None
+fallback_reason = ""
 
 
 # 检索分数阈值：太低的结果不返回，避免不相关知识混进回答
 # 如果后面发现检索不到内容，可以把 0.03 调低到 0.02
 MIN_SCORE = 0.03
+SEMANTIC_MIN_SCORE = 0.25
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+TITLE_MATCH_BOOST = 0.45
+KEYWORD_MATCH_BOOST = 0.08
+MAX_KEYWORD_BOOST = 0.32
 
 
 SYNONYMS = {
@@ -295,7 +308,157 @@ def build_vocab(docs):
         content_terms = extract_terms(doc.get("content", ""))
         vocab_set.update(content_terms)
 
-    return sorted(list(vocab_set))
+    return vocab_set
+
+
+def get_vector_dimension():
+    try:
+        return max(512, int(os.getenv("RAG_VECTOR_DIM", "4096")))
+    except ValueError:
+        return 4096
+
+
+def get_configured_index_mode():
+    mode = os.getenv("RAG_EMBEDDING_MODE", "keyword").strip().lower()
+    if mode in {"semantic", "embedding", "sentence-transformers", "sentence_transformers"}:
+        return "semantic"
+    return "keyword"
+
+
+def get_embedding_model_name():
+    return os.getenv("RAG_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL).strip() or DEFAULT_EMBEDDING_MODEL
+
+
+def load_embedding_model():
+    global embedding_model, active_embedding_model_name
+
+    model_name = get_embedding_model_name()
+    if embedding_model is not None and active_embedding_model_name == model_name:
+        return embedding_model
+
+    allow_download = os.getenv("RAG_ALLOW_MODEL_DOWNLOAD", "false").strip().lower() in {"1", "true", "yes", "on"}
+    if not allow_download:
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
+    from sentence_transformers import SentenceTransformer
+
+    try:
+        embedding_model = SentenceTransformer(model_name, local_files_only=not allow_download)
+    except TypeError:
+        embedding_model = SentenceTransformer(model_name)
+    active_embedding_model_name = model_name
+    return embedding_model
+
+
+def normalize_embeddings(embeddings):
+    embeddings = np.asarray(embeddings, dtype="float32")
+    if embeddings.ndim == 1:
+        embeddings = embeddings.reshape(1, -1)
+
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    return embeddings / norms
+
+
+def encode_semantic_texts(texts):
+    model = load_embedding_model()
+    embeddings = model.encode(
+        texts,
+        convert_to_numpy=True,
+        show_progress_bar=False,
+    )
+    return normalize_embeddings(embeddings)
+
+
+def normalize_match_text(text: str):
+    return re.sub(r"\s+", "", str(text or "")).lower()
+
+
+def title_match_boost(query_text: str, title: str):
+    query_text = normalize_match_text(query_text)
+    title = normalize_match_text(title)
+
+    if not query_text or not title:
+        return 0.0, []
+
+    matched = []
+    boost = 0.0
+    if title in query_text:
+        boost = TITLE_MATCH_BOOST
+        matched.append(f"标题命中：{title}")
+    elif len(title) >= 3:
+        core_title = re.sub(r"(片|胶囊|颗粒|口服液|滴眼液|喷雾|软膏|乳膏|散|丸|贴|说明书)$", "", title)
+        if len(core_title) >= 2 and core_title in query_text:
+            boost = TITLE_MATCH_BOOST
+            matched.append(f"标题核心词命中：{core_title}")
+
+    return boost, matched
+
+
+def keyword_match_boost(query_text: str, keywords):
+    query_text = normalize_match_text(query_text)
+    matched = []
+
+    for keyword in keywords or []:
+        normalized = normalize_match_text(keyword)
+        if len(normalized) >= 2 and normalized in query_text:
+            matched.append(keyword)
+
+    unique_matched = []
+    for item in matched:
+        if item not in unique_matched:
+            unique_matched.append(item)
+
+    boost = min(len(unique_matched) * KEYWORD_MATCH_BOOST, MAX_KEYWORD_BOOST)
+    return boost, unique_matched
+
+
+def add_exact_match_candidates(question: str, candidates):
+    seen_titles = {item["doc"].get("title", "") for item in candidates}
+
+    for doc in documents:
+        if doc.get("title", "") in seen_titles:
+            continue
+
+        title_boost, _title_matches = title_match_boost(question, doc.get("title", ""))
+        keyword_boost, _keyword_matches = keyword_match_boost(question, doc.get("keywords", []))
+        if title_boost > 0 or keyword_boost > 0:
+            candidates.append({
+                "doc": doc,
+                "score": 0.0,
+            })
+            seen_titles.add(doc.get("title", ""))
+
+    return candidates
+
+
+def hybrid_rank_results(question: str, candidates):
+    ranked = []
+
+    for candidate in candidates:
+        doc = candidate["doc"]
+        base_score = float(candidate["score"])
+        title_boost, title_matches = title_match_boost(question, doc.get("title", ""))
+        keyword_boost, keyword_matches = keyword_match_boost(question, doc.get("keywords", []))
+        hybrid_score = min(base_score + title_boost + keyword_boost, 1.0)
+
+        ranked.append({
+            **candidate,
+            "hybrid_score": hybrid_score,
+            "boost": title_boost + keyword_boost,
+            "match_reason": title_matches + [
+                f"关键词命中：{item}" for item in keyword_matches
+            ],
+        })
+
+    ranked.sort(key=lambda item: item["hybrid_score"], reverse=True)
+    return ranked
+
+
+def term_hash_id(term: str, dimension: int):
+    digest = hashlib.blake2b(term.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, "little") % dimension
 
 
 def vectorize_text(terms, keywords=None):
@@ -304,17 +467,17 @@ def vectorize_text(terms, keywords=None):
     terms：普通词，权重 1
     keywords：重要词，权重 3
     """
-    vector = np.zeros(len(vocab), dtype="float32")
+    vector = np.zeros(vector_dimension, dtype="float32")
 
     for term in terms:
-        if term in term_to_id:
-            vector[term_to_id[term]] += 1.0
+        if term in vocab:
+            vector[term_hash_id(term, vector_dimension)] += 1.0
 
     # 标题、症状、药品名称、用户问题命中词等重要关键词加权
     if keywords:
         for keyword in keywords:
-            if keyword in term_to_id:
-                vector[term_to_id[keyword]] += 3.0
+            if keyword in vocab:
+                vector[term_hash_id(keyword, vector_dimension)] += 3.0
 
     norm = np.linalg.norm(vector)
     if norm > 0:
@@ -327,34 +490,66 @@ def init_vector_store():
     """
     初始化 FAISS 向量库
     """
-    global index, documents, vocab, term_to_id
+    global index, documents, vocab, term_to_id, vector_dimension
+    global active_index_mode, configured_index_mode, active_embedding_model_name, fallback_reason
 
     documents = build_documents()
 
     if not documents:
         raise ValueError("知识库为空，无法构建向量索引。")
 
+    configured_index_mode = get_configured_index_mode()
+    fallback_reason = ""
     vocab = build_vocab(documents)
-    term_to_id = {term: i for i, term in enumerate(vocab)}
+    term_to_id = {}
 
-    vectors = []
+    if configured_index_mode == "semantic":
+        try:
+            embeddings = encode_semantic_texts([doc["content"] for doc in documents])
+            vector_dimension = embeddings.shape[1]
+            dimension = embeddings.shape[1]
 
-    for doc in documents:
+            index = faiss.IndexFlatIP(dimension)
+            index.add(embeddings)
+            active_index_mode = "semantic"
+
+            return {
+                "doc_count": len(documents),
+                "dimension": dimension,
+                "vocab_size": len(vocab),
+                "index_mode": active_index_mode,
+                "configured_mode": configured_index_mode,
+                "embedding_model": active_embedding_model_name,
+                "fallback": False,
+                "fallback_reason": "",
+                "message": "使用 sentence-transformers 语义向量构建FAISS索引成功"
+            }
+        except Exception as exc:
+            fallback_reason = f"语义向量模型不可用，已降级为关键词检索：{exc}"
+
+    active_index_mode = "keyword"
+    active_embedding_model_name = ""
+    vector_dimension = get_vector_dimension()
+    embeddings = np.zeros((len(documents), vector_dimension), dtype="float32")
+
+    for row_index, doc in enumerate(documents):
         terms = extract_terms(doc["content"])
-        vector = vectorize_text(terms, keywords=doc.get("keywords", []))
-        vectors.append(vector)
-
-    embeddings = np.array(vectors).astype("float32")
+        embeddings[row_index] = vectorize_text(terms, keywords=doc.get("keywords", []))
 
     dimension = embeddings.shape[1]
-
     index = faiss.IndexFlatIP(dimension)
     index.add(embeddings)
 
     return {
         "doc_count": len(documents),
         "dimension": dimension,
-        "message": "使用轻量级关键词向量方式构建 FAISS 索引成功"
+        "vocab_size": len(vocab),
+        "index_mode": active_index_mode,
+        "configured_mode": configured_index_mode,
+        "embedding_model": active_embedding_model_name,
+        "fallback": configured_index_mode != active_index_mode,
+        "fallback_reason": fallback_reason,
+        "message": "使用固定维度关键词哈希向量构建FAISS索引成功"
     }
 
 
@@ -367,37 +562,61 @@ def search_knowledge(question: str, top_k: int = 3, score_threshold: float = MIN
     if index is None:
         init_vector_store()
 
-    query_terms = expand_question_terms(question)
+    if active_index_mode == "semantic":
+        query_vector = encode_semantic_texts([question]).astype("float32")
+        effective_score_threshold = SEMANTIC_MIN_SCORE if score_threshold == MIN_SCORE else score_threshold
+    else:
+        query_terms = expand_question_terms(question)
 
-    # 给用户问题中的命中词加权，提高症状词、同义词对检索结果的影响
-    query_vector = vectorize_text(
-        query_terms,
-        keywords=list(query_terms)
-    ).reshape(1, -1).astype("float32")
+        # 给用户问题中的命中词加权，提高症状词、同义词对检索结果的影响
+        query_vector = vectorize_text(
+            query_terms,
+            keywords=list(query_terms)
+        ).reshape(1, -1).astype("float32")
+        effective_score_threshold = score_threshold
 
     # 如果问题完全没有命中词表，直接返回空
     if np.linalg.norm(query_vector) == 0:
         return []
 
-    # 多取一些，再做过滤，避免 top_k 太小导致有效结果被挤掉
-    search_k = min(max(top_k * 3, top_k), len(documents))
+    # 多取一些，再做混合重排，避免语义召回把精确药名/病名挤掉
+    search_k = min(max(top_k * 8, top_k, 20), len(documents))
     scores, indices = index.search(query_vector, search_k)
 
-    results = []
+    candidates = []
 
     for score, idx in zip(scores[0], indices[0]):
         if idx == -1:
             continue
 
-        if score < score_threshold:
+        if score < effective_score_threshold:
             continue
 
         doc = documents[idx]
 
+        candidates.append({
+            "doc": doc,
+            "score": float(score),
+        })
+
+    candidates = add_exact_match_candidates(question, candidates)
+    ranked_candidates = hybrid_rank_results(question, candidates)
+
+    results = []
+    for candidate in ranked_candidates:
+        if candidate["hybrid_score"] < effective_score_threshold:
+            continue
+
+        doc = candidate["doc"]
+
         results.append({
             "title": doc["title"],
             "doc_type": doc["doc_type"],
-            "score": float(score),
+            "score": float(candidate["hybrid_score"]),
+            "base_score": float(candidate["score"]),
+            "boost": float(candidate["boost"]),
+            "match_reason": candidate["match_reason"],
+            "index_mode": active_index_mode,
             "content": doc["content"],
             "raw": doc["raw"]
         })
@@ -408,52 +627,113 @@ def search_knowledge(question: str, top_k: int = 3, score_threshold: float = MIN
     return results
 
 
-def build_simple_answer(question: str, retrieved_docs: list):
+def filter_answer_docs(retrieved_docs: list, database_context=None, min_score: float = 0.02):
     """
-    根据检索结果生成简单结构化回答。
-    DeepSeek 不可用时，可以作为本地模板兜底。
+    过滤用于生成回答的RAG文档，避免低相似度噪声进入大模型或兜底模板。
+    数据库已经命中的同名记录会保留，便于和结构化记录交叉验证。
     """
-    if not retrieved_docs:
+    database_context = database_context or {}
+    matched_titles = {
+        item.get("title", "")
+        for item in (
+            database_context.get("diseases", [])
+            + database_context.get("medicines", [])
+        )
+    }
+    effective_min_score = 0.04 if matched_titles else min_score
+
+    filtered = []
+    for doc in retrieved_docs:
+        title = doc.get("title", "")
+        score = doc.get("score", 0)
+
+        if score >= effective_min_score or title in matched_titles:
+            filtered.append(doc)
+
+    return filtered
+
+
+def format_match_info(item):
+    matches = item.get("matched_fields", [])
+    if not matches:
+        return ""
+    return f"匹配依据：{'；'.join(matches)}\n"
+
+
+def build_simple_answer(question: str, retrieved_docs: list, database_context=None):
+    """
+    根据数据库命中和RAG检索结果生成简单结构化回答。
+    该回答作为大模型不可用时的兜底方案，仍然优先使用结构化数据库记录。
+    """
+    database_context = database_context or {}
+    db_disease_docs = database_context.get("diseases", [])
+    db_medicine_docs = database_context.get("medicines", [])
+
+    if not retrieved_docs and not db_disease_docs and not db_medicine_docs:
         return (
-            "知识库中暂未检索到足够相关的信息。"
-            "建议你补充更详细的症状描述，或咨询医生、药师。"
-            "本系统仅提供健康信息参考，不能替代医生诊断。"
+            "数据库和知识库中暂未检索到足够相关的信息。"
+            "建议你补充更详细的症状描述，例如主要不适、伴随症状、是否用药和特殊人群情况。"
+            "本系统仅提供健康信息参考，不能替代医生诊断或药师指导。"
         )
 
-    disease_docs = [doc for doc in retrieved_docs if doc["doc_type"] == "disease"]
-    medicine_docs = [doc for doc in retrieved_docs if doc["doc_type"] == "medicine"]
+    disease_docs = [doc for doc in retrieved_docs if doc.get("doc_type") == "disease"]
+    medicine_docs = [doc for doc in retrieved_docs if doc.get("doc_type") == "medicine"]
 
-    answer = "根据你描述的情况，系统从知识库中检索到了以下相关信息：\n\n"
+    answer = "根据你描述的情况，系统已结合数据库命中记录和RAG知识库检索结果，得到以下相关信息：\n\n"
 
-    if disease_docs:
-        answer += "一、可能相关的常见病方向：\n"
+    if db_disease_docs:
+        answer += "一、数据库命中的常见病方向：\n"
 
-        for doc in disease_docs:
-            raw = doc["raw"]
+        for item in db_disease_docs:
+            raw = item.get("raw", {})
 
             answer += f"\n【{raw.get('name', '')}】\n"
-            answer += f"匹配分数：{doc.get('score', 0):.4f}\n"
+            answer += format_match_info(item)
             answer += f"常见症状：{'、'.join(normalize_symptoms(raw.get('symptoms', [])))}\n"
             answer += f"症状说明：{raw.get('description', '')}\n"
             answer += f"日常护理：{raw.get('care_advice', '')}\n"
             answer += f"用药注意：{raw.get('medicine_notice', '')}\n"
             answer += f"就医提醒：{raw.get('warning', '')}\n"
 
-    if medicine_docs:
-        answer += "\n二、相关药品或用药注意：\n"
+    if db_medicine_docs:
+        answer += "\n二、数据库命中的药品或用药注意：\n"
 
-        for doc in medicine_docs:
-            raw = doc["raw"]
+        for item in db_medicine_docs:
+            raw = item.get("raw", {})
 
             answer += f"\n【{raw.get('name', '')}】\n"
-            answer += f"匹配分数：{doc.get('score', 0):.4f}\n"
+            answer += format_match_info(item)
             answer += f"药品类别：{raw.get('type', '')}\n"
             answer += f"适用情况：{raw.get('usage', '')}\n"
             answer += f"注意事项：{raw.get('notice', '')}\n"
             answer += f"禁忌人群：{raw.get('contraindication', '')}\n"
             answer += f"不良反应：{raw.get('side_effect', '')}\n"
 
-    answer += "\n三、系统提示：\n"
+    shown_titles = {
+        item.get("title", "")
+        for item in db_disease_docs + db_medicine_docs
+    }
+    rag_supplements = [
+        doc for doc in disease_docs + medicine_docs
+        if doc.get("title", "") not in shown_titles
+    ]
+
+    if rag_supplements:
+        answer += "\n三、RAG知识库补充：\n"
+
+        for doc in rag_supplements[:3]:
+            raw = doc.get("raw", {})
+            if doc.get("doc_type") == "disease":
+                answer += f"\n【{raw.get('name', doc.get('title', ''))}】\n"
+                answer += f"常见症状：{'、'.join(raw.get('symptoms', []))}\n"
+                answer += f"护理建议：{raw.get('care_advice', '')}\n"
+                answer += f"就医提醒：{raw.get('warning', '')}\n"
+            else:
+                answer += f"\n【{raw.get('name', doc.get('title', ''))}】\n"
+                answer += f"适用情况：{raw.get('usage', '')}\n"
+                answer += f"注意事项：{raw.get('notice', '')}\n"
+
+    answer += "\n四、系统提示：\n"
     answer += (
         "本系统仅提供健康信息参考，不能替代医生诊断或药师指导。"
         "如症状持续加重、出现高热不退、呼吸困难、胸痛、意识异常等情况，应及时就医。"
