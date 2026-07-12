@@ -336,9 +336,17 @@ def load_embedding_model():
     if embedding_model is not None and active_embedding_model_name == model_name:
         return embedding_model
 
+    allow_download = os.getenv("RAG_ALLOW_MODEL_DOWNLOAD", "false").strip().lower() in {"1", "true", "yes", "on"}
+    if not allow_download:
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
     from sentence_transformers import SentenceTransformer
 
-    embedding_model = SentenceTransformer(model_name)
+    try:
+        embedding_model = SentenceTransformer(model_name, local_files_only=not allow_download)
+    except TypeError:
+        embedding_model = SentenceTransformer(model_name)
     active_embedding_model_name = model_name
     return embedding_model
 

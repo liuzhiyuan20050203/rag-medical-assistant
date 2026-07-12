@@ -1014,11 +1014,11 @@ def history_feedback(record_id: int, data: dict, user: dict = Depends(optional_u
 
 
 @app.get("/api/analytics/summary")
-def analytics_summary():
+def analytics_summary(deep_recheck: bool = False):
     """
     可视化分析数据接口。
     """
-    return build_analytics()
+    return build_analytics(deep_recheck=deep_recheck)
 
 
 @app.get("/api/llm/test")

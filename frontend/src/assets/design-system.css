@@ -1,13 +1,13 @@
 .ui-page-heading {
   display: grid;
-  gap: 10px;
-  margin-bottom: 24px;
+  gap: 8px;
+  margin-bottom: 18px;
 }
 
 .ui-page-heading h1,
 .ui-page-heading h2 {
   color: var(--text-primary);
-  font-size: 30px;
+  font-size: 28px;
   font-weight: 900;
   line-height: 1.25;
 }
@@ -15,7 +15,7 @@
 .ui-page-heading p {
   max-width: 780px;
   color: var(--text-muted);
-  line-height: 1.8;
+  line-height: 1.7;
 }
 
 .ui-toolbar {
@@ -23,7 +23,7 @@
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 18px;
 }
 
 .ui-card {
@@ -131,7 +131,7 @@
 }
 
 .ui-empty {
-  padding: 24px;
+  padding: 20px;
   color: var(--text-muted);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -140,7 +140,7 @@
 }
 
 .ui-alert {
-  padding: 14px 16px;
+  padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   line-height: 1.7;

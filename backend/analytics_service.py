@@ -25,7 +25,7 @@ STOP_WORDS = {
 
 CURRENT_GOOD_SCORE = 0.35
 CURRENT_LOW_SCORE = 0.25
-RECHECK_LIMIT = 60
+RECHECK_LIMIT = 12
 
 ACTION_LABELS = {
     "rag_answer": "RAG症状问答",
@@ -225,7 +225,7 @@ def build_rag_quality(history):
     }
 
 
-def build_quality_diagnosis(history):
+def build_quality_diagnosis(history, deep_recheck=False):
     issue_rows = []
     issue_counter = Counter()
     issue_examples = {}
@@ -248,7 +248,8 @@ def build_quality_diagnosis(history):
 
     for record, issue in candidate_records[:RECHECK_LIMIT]:
         question = record.get("question", "")
-        current_docs = current_search(question, top_k=3)
+        existing_docs = record.get("retrieved_docs") or []
+        current_docs = current_search(question, top_k=3) if deep_recheck else existing_docs
         current_status = current_issue_status(issue, record, current_docs)
         current_top_score = max_doc_score(current_docs)
         rechecked += 1
@@ -341,7 +342,7 @@ def build_word_cloud(history, symptoms, medicines, warning_rules):
     ]
 
 
-def build_analytics():
+def build_analytics(deep_recheck=False):
     history = get_history_list()
     diseases = get_all_diseases()
     medicines = get_all_medicines()
@@ -412,7 +413,7 @@ def build_analytics():
     warning_count = sum(1 for item in history if (item.get("warning") or {}).get("has_warning"))
     feedback_count = sum(1 for item in history if item.get("rating") or item.get("satisfaction"))
     average_rating = round(rating_total / rating_count, 1) if rating_count else 0
-    quality_diagnosis = build_quality_diagnosis(history)
+    quality_diagnosis = build_quality_diagnosis(history, deep_recheck=deep_recheck)
 
     return {
         "overview": {

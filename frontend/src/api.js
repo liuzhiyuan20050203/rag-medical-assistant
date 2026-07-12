@@ -33,14 +33,34 @@ export const clearPageCacheByPrefix = (prefix) => {
 }
 
 export const cachedGetJson = async (key, path, options = {}) => {
-  const { force = false, fetchOptions = {} } = options
+  const { force = false, fetchOptions = {}, timeoutMs = 0 } = options
   const cached = force ? null : readPageCache(key)
 
   if (cached) {
     return cached
   }
 
-  const response = await fetch(apiUrl(path), fetchOptions)
+  const controller = timeoutMs > 0 ? new AbortController() : null
+  const timeoutId = controller
+    ? window.setTimeout(() => controller.abort(), timeoutMs)
+    : null
+
+  let response
+  try {
+    response = await fetch(apiUrl(path), {
+      ...fetchOptions,
+      signal: controller?.signal || fetchOptions.signal,
+    })
+  } finally {
+    if (timeoutId) {
+      window.clearTimeout(timeoutId)
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`)
+  }
+
   const data = await response.json()
   return writePageCache(key, data)
 }

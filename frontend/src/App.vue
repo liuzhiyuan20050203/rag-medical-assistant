@@ -207,12 +207,12 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 28px;
-  min-height: 72px;
-  padding: 12px clamp(18px, 4vw, 56px);
+  gap: 22px;
+  min-height: 64px;
+  padding: 10px clamp(18px, 4vw, 48px);
   background: rgba(255, 255, 255, 0.92);
   border-bottom: 1px solid rgba(29, 78, 216, 0.1);
-  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
   backdrop-filter: blur(18px);
 }
 
@@ -231,8 +231,8 @@ onBeforeUnmount(() => {
 
 .brand-mark {
   display: grid;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   place-items: center;
   color: #ffffff;
   background: linear-gradient(135deg, var(--medical-blue), var(--clinical-green));
@@ -241,8 +241,8 @@ onBeforeUnmount(() => {
 }
 
 .brand-mark svg {
-  width: 25px;
-  height: 25px;
+  width: 23px;
+  height: 23px;
   fill: currentColor;
 }
 
@@ -283,8 +283,8 @@ onBeforeUnmount(() => {
 .nav a {
   display: inline-flex;
   align-items: center;
-  min-height: 38px;
-  padding: 0 13px;
+  min-height: 36px;
+  padding: 0 12px;
   color: var(--text-secondary);
   text-decoration: none;
   border-radius: 8px;
@@ -316,7 +316,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 42px;
+  min-height: 40px;
   padding: 4px 9px 4px 5px;
   color: var(--text-secondary);
   background: #ffffff;
@@ -454,7 +454,7 @@ onBeforeUnmount(() => {
 .main {
   width: min(1180px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 34px 0 56px;
+  padding: 24px 0 46px;
 }
 
 @media (max-width: 980px) {

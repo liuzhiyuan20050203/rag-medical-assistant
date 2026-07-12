@@ -174,15 +174,15 @@ const hasClinicalPanels = computed(() => Boolean(
 <style scoped>
 .message {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  gap: 12px;
-  max-width: 860px;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 10px;
+  max-width: 820px;
 }
 
 .user-message {
   align-self: flex-end;
-  grid-template-columns: minmax(0, 1fr) 42px;
-  max-width: 720px;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  max-width: min(720px, 86%);
 }
 
 .user-message .avatar {
@@ -200,8 +200,8 @@ const hasClinicalPanels = computed(() => Boolean(
 
 .avatar {
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   place-items: center;
   color: #ffffff;
   background: linear-gradient(135deg, var(--medical-blue), var(--clinical-green));
@@ -210,10 +210,11 @@ const hasClinicalPanels = computed(() => Boolean(
 }
 
 .bubble {
-  padding: 14px 16px;
+  padding: 13px 15px;
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 8px;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
 }
 
 .answer-content strong {
@@ -233,7 +234,7 @@ pre {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
-  line-height: 1.75;
+  line-height: 1.72;
 }
 
 .loading-card {
@@ -310,14 +311,14 @@ pre {
 
 .assistant-panels {
   display: grid;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .message-panel {
   display: grid;
   gap: 8px;
-  padding: 12px;
+  padding: 10px;
   background: #f8fafc;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -411,8 +412,8 @@ pre {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
-  padding-top: 10px;
+  margin-top: 10px;
+  padding-top: 9px;
   border-top: 1px solid var(--border);
 }
 

@@ -3,7 +3,7 @@
     <div class="page-title ui-page-heading">
       <h2>系统知识库</h2>
       <p>
-        本页面展示系统当前内置的常见病知识库、药品知识库和危险症状规则库。
+        本页面展示系统当前内置的常见病知识库和药品知识库。
         AI 医疗助手会基于这些知识内容进行检索和回答。
       </p>
       <button type="button" class="refresh-btn ui-button ui-button--soft" @click="loadKnowledge(true)" :disabled="loading">
@@ -11,6 +11,32 @@
         {{ loading ? '刷新中...' : '刷新数据' }}
       </button>
     </div>
+
+    <section class="knowledge-search ui-card" aria-label="知识库搜索">
+      <div>
+        <strong>搜索知识库</strong>
+        <span>按当前分类筛选名称、症状、用途、注意事项等内容。</span>
+      </div>
+
+      <label>
+        <Search :size="18" aria-hidden="true" />
+        <input
+          v-model.trim="searchKeyword"
+          type="search"
+          :placeholder="searchPlaceholder"
+          aria-label="搜索知识库"
+        />
+        <button
+          v-if="searchKeyword"
+          type="button"
+          title="清空搜索"
+          aria-label="清空搜索"
+          @click="clearSearch"
+        >
+          ×
+        </button>
+      </label>
+    </section>
 
     <div class="tabs ui-tabs">
       <button
@@ -30,6 +56,7 @@
       </button>
 
       <button
+        v-if="isAdmin"
         class="ui-tab"
         :class="{ active: activeTab === 'warning' }"
         @click="setTab('warning')"
@@ -46,7 +73,10 @@
       <div class="section-header">
         <div>
           <h3>{{ activeLabel }}</h3>
-          <span>共 {{ currentTotal }} 条，当前显示 {{ displayStart }}-{{ displayEnd }} 条</span>
+          <span>
+            共 {{ currentTotal }} 条，当前显示 {{ displayStart }}-{{ displayEnd }} 条
+            <template v-if="searchKeyword">，已按“{{ searchKeyword }}”筛选</template>
+          </span>
         </div>
 
         <label class="page-size-control">
@@ -61,7 +91,7 @@
       </div>
 
       <div v-if="currentTotal === 0" class="ui-empty">
-        暂无知识库内容。
+        {{ searchKeyword ? '没有匹配的知识库内容，请换个关键词试试。' : '暂无知识库内容。' }}
       </div>
 
       <div v-else class="knowledge-list">
@@ -210,18 +240,21 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   RefreshCw,
+  Search,
 } from '@lucide/vue'
 import { cachedGetJson } from '../api'
 
 const activeTab = ref('disease')
 const loading = ref(false)
+const searchKeyword = ref('')
+const currentUser = ref(null)
 
 const diseases = ref([])
 const medicines = ref([])
@@ -244,17 +277,41 @@ const tabLabels = {
 }
 const pageSizeOptions = [6, 8, 12, 16, 24]
 
+const loadCurrentUser = () => {
+  try {
+    const raw = localStorage.getItem('ragUser')
+    currentUser.value = raw ? JSON.parse(raw) : null
+  } catch (error) {
+    console.error(error)
+    currentUser.value = null
+  }
+}
+
+const isAdmin = computed(() => currentUser.value?.role === 'admin')
 const activeLabel = computed(() => tabLabels[activeTab.value])
-const currentItems = computed(() => {
+const searchPlaceholder = computed(() => {
+  if (activeTab.value === 'medicine') return '搜索药品名称、类别、适用情况...'
+  if (activeTab.value === 'warning') return '搜索危险症状关键词...'
+  return '搜索疾病名称、症状、护理建议...'
+})
+const rawCurrentItems = computed(() => {
   if (activeTab.value === 'medicine') {
     return medicines.value
   }
 
   if (activeTab.value === 'warning') {
-    return warningRules.value
+    return isAdmin.value ? warningRules.value : []
   }
 
   return diseases.value
+})
+const currentItems = computed(() => {
+  const keyword = normalizeSearchText(searchKeyword.value)
+  if (!keyword) return rawCurrentItems.value
+
+  return rawCurrentItems.value.filter((item) => {
+    return searchableText(item).includes(keyword)
+  })
 })
 const currentTotal = computed(() => currentItems.value.length)
 const pageSize = computed({
@@ -287,7 +344,13 @@ const visiblePageNumbers = computed(() => {
 })
 
 const setTab = (tab) => {
+  if (tab === 'warning' && !isAdmin.value) {
+    activeTab.value = 'disease'
+    return
+  }
+
   activeTab.value = tab
+  currentPageByTab[tab] = 1
 }
 
 const setPage = (page) => {
@@ -300,6 +363,39 @@ const fieldText = (value) => {
   }
 
   return String(value || '').trim() || '暂无'
+}
+
+const normalizeSearchText = (value) => {
+  return String(value || '').replace(/\s+/g, '').toLowerCase()
+}
+
+const searchableText = (item) => {
+  if (activeTab.value === 'warning') {
+    return normalizeSearchText(item)
+  }
+
+  if (!item || typeof item !== 'object') {
+    return ''
+  }
+
+  return normalizeSearchText([
+    item.name,
+    item.category,
+    item.description,
+    item.symptoms,
+    item.care_advice,
+    item.medicine_notice,
+    item.warning,
+    item.type,
+    item.usage,
+    item.notice,
+    item.contraindication,
+    item.side_effect,
+  ].map(fieldText).join(' '))
+}
+
+const clearSearch = () => {
+  searchKeyword.value = ''
 }
 
 const knowledgeKey = (item, index) => {
@@ -323,15 +419,20 @@ const loadKnowledge = async (force = false) => {
   loading.value = true
 
   try {
-    const [diseaseData, medicineData, warningData] = await Promise.all([
+    const requests = [
       cachedGetJson('knowledge:diseases', '/api/disease/list', { force }),
       cachedGetJson('knowledge:medicines', '/api/medicine/list', { force }),
-      cachedGetJson('knowledge:warnings', '/api/warning/list', { force }),
-    ])
+    ]
+
+    if (isAdmin.value) {
+      requests.push(cachedGetJson('knowledge:warnings', '/api/warning/list', { force }))
+    }
+
+    const [diseaseData, medicineData, warningData] = await Promise.all(requests)
 
     diseases.value = diseaseData.data || []
     medicines.value = medicineData.data || []
-    warningRules.value = warningData.data || []
+    warningRules.value = isAdmin.value ? (warningData?.data || []) : []
     clampCurrentPage()
   } catch (error) {
     alert('知识库加载失败，请检查后端服务是否正常运行。')
@@ -341,18 +442,33 @@ const loadKnowledge = async (force = false) => {
   }
 }
 
-watch([activeTab, currentTotal, pageSize], () => {
+watch([activeTab, currentTotal, pageSize, searchKeyword], () => {
   clampCurrentPage()
 })
 
+watch(isAdmin, (nextIsAdmin) => {
+  if (!nextIsAdmin && activeTab.value === 'warning') {
+    activeTab.value = 'disease'
+  }
+  loadKnowledge(true)
+})
+
 onMounted(() => {
+  loadCurrentUser()
   loadKnowledge()
+  window.addEventListener('storage', loadCurrentUser)
+  window.addEventListener('rag-user-change', loadCurrentUser)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('storage', loadCurrentUser)
+  window.removeEventListener('rag-user-change', loadCurrentUser)
 })
 </script>
 
 <style scoped>
 .page-title {
-  margin-bottom: 24px;
+  margin-bottom: 18px;
 }
 
 .refresh-btn {
@@ -368,9 +484,83 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
+.knowledge-search {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(280px, 1.2fr);
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+}
+
+.knowledge-search strong,
+.knowledge-search span {
+  display: block;
+}
+
+.knowledge-search strong {
+  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.knowledge-search span {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.knowledge-search label {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 32px;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 10px;
+  color: var(--text-muted);
+  background: #f8fbfd;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.knowledge-search label:focus-within {
+  color: var(--medical-blue);
+  background: #ffffff;
+  border-color: var(--medical-blue);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.knowledge-search input {
+  width: 100%;
+  min-height: 42px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.knowledge-search button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: var(--text-muted);
+  background: transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.knowledge-search button:hover {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
 .content-section {
   display: grid;
-  gap: 16px;
+  gap: 14px;
   margin-top: 10px;
 }
 
@@ -423,13 +613,13 @@ onMounted(() => {
 .knowledge-list {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
+  gap: 10px;
 }
 
 .knowledge-row {
   display: grid;
-  gap: 12px;
-  padding: 18px;
+  gap: 10px;
+  padding: 15px;
   transition:
     border-color 0.2s ease,
     box-shadow 0.2s ease,
@@ -493,12 +683,12 @@ onMounted(() => {
 .knowledge-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .knowledge-fields div {
   min-width: 0;
-  padding: 12px;
+  padding: 10px;
   background: #f8fbfd;
   border: 1px solid #e4edf3;
   border-radius: var(--radius-sm);
@@ -523,7 +713,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 12px 14px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -585,6 +775,10 @@ onMounted(() => {
 }
 
 @media (max-width: 700px) {
+  .knowledge-search {
+    grid-template-columns: 1fr;
+  }
+
   .section-header,
   .row-head,
   .pagination-bar {

@@ -229,8 +229,8 @@ defineExpose({
 <style scoped>
 .composer {
   display: grid;
-  gap: 10px;
-  padding: 12px;
+  gap: 8px;
+  padding: 10px 12px 12px;
   background: #ffffff;
   border-top: 1px solid var(--border);
 }
@@ -246,9 +246,9 @@ defineExpose({
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  max-width: min(100%, 520px);
-  min-height: 42px;
-  padding: 5px 8px;
+  max-width: min(100%, 460px);
+  min-height: 38px;
+  padding: 4px 7px;
   color: var(--text-secondary);
   background: #f8fafc;
   border: 1px solid var(--border);
@@ -257,8 +257,8 @@ defineExpose({
 }
 
 .attachment-pill img {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   object-fit: cover;
   border-radius: 999px;
 }
@@ -295,26 +295,26 @@ defineExpose({
 
 .subtle-status {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .chat-composer-bar {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) 58px 58px 64px;
-  gap: 8px;
-  align-items: end;
-  padding: 8px;
-  background: #f8fafc;
-  border: 1px solid var(--border);
+  grid-template-columns: 44px minmax(0, 1fr) 42px 42px 46px;
+  gap: 6px;
+  align-items: center;
+  padding: 7px;
+  background: #ffffff;
+  border: 1px solid #cfdde8;
   border-radius: 8px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
 }
 
 textarea {
   width: 100%;
-  min-height: 46px;
+  min-height: 42px;
   max-height: 150px;
-  padding: 12px 4px;
+  padding: 10px 6px;
   color: var(--text-primary);
   resize: none;
   overflow-y: auto;
@@ -340,16 +340,17 @@ textarea:focus {
 }
 
 .icon-btn {
+  position: relative;
   display: flex;
   width: 100%;
   min-width: 0;
-  height: 50px;
+  height: 42px;
   align-items: center;
   justify-content: center;
   gap: 3px;
   color: var(--text-secondary);
-  background: #ffffff;
-  border: 1px solid var(--border);
+  background: #f8fafc;
+  border: 1px solid transparent;
   border-radius: 8px;
   cursor: pointer;
   transition:
@@ -360,15 +361,19 @@ textarea:focus {
 }
 
 .icon-btn span {
-  font-size: 12px;
-  font-weight: 900;
-  line-height: 1;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip: rect(0 0 0 0);
 }
 
 .voice-btn {
   color: #0f766e;
   background: #ecfdf5;
-  border: 1px solid #99f6e4;
+  border-color: #b7eadf;
 }
 
 .voice-btn.active {
@@ -385,7 +390,7 @@ textarea:focus {
 .icon-btn:hover:not(:disabled) {
   color: #1d4ed8;
   background: #eff6ff;
-  border-color: #93c5fd;
+  border-color: #bfdbfe;
   transform: translateY(-1px);
 }
 
@@ -424,16 +429,12 @@ textarea:focus {
 
 @media (max-width: 640px) {
   .chat-composer-bar {
-    grid-template-columns: 46px minmax(0, 1fr) 46px 46px 52px;
-    gap: 6px;
+    grid-template-columns: 40px minmax(0, 1fr) 40px 40px 44px;
+    gap: 5px;
   }
 
   .icon-btn {
-    height: 46px;
-  }
-
-  .icon-btn span {
-    display: none;
+    height: 40px;
   }
 }
 </style>

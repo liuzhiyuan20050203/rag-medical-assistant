@@ -1049,7 +1049,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .chat-page {
   display: grid;
-  gap: 18px;
+  gap: 12px;
 }
 
 .media-probe {
@@ -1062,10 +1062,10 @@ onBeforeUnmount(() => {
 
 .chat-shell {
   display: grid;
-  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
-  gap: 14px;
-  height: calc(100dvh - 156px);
-  min-height: 600px;
+  grid-template-columns: minmax(196px, 224px) minmax(0, 1fr);
+  gap: 12px;
+  height: calc(100dvh - 142px);
+  min-height: 620px;
 }
 
 .chat-side,
@@ -1076,7 +1076,7 @@ onBeforeUnmount(() => {
 .chat-side {
   display: grid;
   align-content: start;
-  gap: 10px;
+  gap: 8px;
 }
 
 .assistant-card,
@@ -1093,13 +1093,17 @@ onBeforeUnmount(() => {
 
 .assistant-card {
   display: grid;
-  gap: 10px;
-  padding: 16px;
+  gap: 9px;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, #ffffff, #f8fbfd),
+    var(--surface);
 }
 
 .assistant-badge {
   display: inline-flex;
-  margin-bottom: 10px;
+  width: fit-content;
+  margin-bottom: 2px;
   padding: 5px 10px;
   color: #0f766e;
   background: #ccfbf1;
@@ -1109,15 +1113,14 @@ onBeforeUnmount(() => {
 }
 
 .assistant-card h2 {
-  margin-bottom: 8px;
+  margin-bottom: 0;
   color: var(--text-primary);
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1.25;
 }
 
 .assistant-card p {
-  font-size: 13px;
-  line-height: 1.7;
+  display: none;
 }
 
 .assistant-card p,
@@ -1134,7 +1137,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 38px;
+  min-height: 40px;
   padding: 0 12px;
   color: #ffffff;
   background: var(--medical-blue);
@@ -1159,19 +1162,20 @@ onBeforeUnmount(() => {
 
 .side-content {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .session-panel {
   display: grid;
-  gap: 10px;
+  gap: 9px;
   padding: 12px;
 }
 
 .quick-panel {
   display: grid;
-  gap: 8px;
+  gap: 7px;
   padding: 12px;
+  background: #fbfdff;
 }
 
 .section-title {
@@ -1227,8 +1231,8 @@ onBeforeUnmount(() => {
 
 .session-list {
   display: grid;
-  gap: 7px;
-  max-height: 260px;
+  gap: 6px;
+  max-height: 300px;
   overflow: auto;
 }
 
@@ -1238,8 +1242,8 @@ onBeforeUnmount(() => {
   gap: 2px 7px;
   align-items: center;
   width: 100%;
-  min-height: 48px;
-  padding: 8px 10px;
+  min-height: 44px;
+  padding: 8px;
   color: var(--text-secondary);
   text-align: left;
   background: #f8fafc;
@@ -1281,11 +1285,11 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 3px;
   width: 100%;
-  min-height: 54px;
-  padding: 9px 10px;
+  min-height: 0;
+  padding: 8px 9px;
   color: var(--text-primary);
   text-align: left;
-  background: #f8fafc;
+  background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: default;
@@ -1299,6 +1303,7 @@ onBeforeUnmount(() => {
 .quick-card span {
   color: var(--text-muted);
   font-size: 12px;
+  line-height: 1.45;
 }
 
 .admin-tip {
@@ -1318,14 +1323,18 @@ onBeforeUnmount(() => {
   grid-template-rows: minmax(0, 1fr) auto auto;
   min-height: 0;
   overflow: hidden;
+  border-color: #cfe0ea;
 }
 
 .conversation {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   overflow-y: auto;
-  padding: 20px;
+  padding: 18px;
+  background:
+    linear-gradient(180deg, #fbfdff, #ffffff 34%),
+    #ffffff;
   scroll-behavior: smooth;
 }
 

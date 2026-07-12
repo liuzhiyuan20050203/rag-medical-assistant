@@ -17,8 +17,12 @@
       </button>
     </div>
 
-    <div v-if="historyList.length === 0" class="empty ui-empty">
-      暂无历史记录，请先到“AI 助手”页面进行咨询。
+    <div v-if="historyList.length === 0" class="empty-state ui-empty">
+      <strong>还没有历史记录</strong>
+      <span>完成一次 AI 健康咨询后，系统会在这里保存对话，方便之后继续追问。</span>
+      <RouterLink class="ui-button ui-button--primary" to="/chat">
+        去 AI 助手咨询
+      </RouterLink>
     </div>
 
     <div v-for="item in historyList" :key="item.id" class="history-card ui-card">
@@ -53,11 +57,11 @@
         <pre>{{ item.answer }}</pre>
       </div>
 
-      <div
+      <details
         v-if="item.retrieved_docs && item.retrieved_docs.length > 0"
         class="docs"
       >
-        <h4>检索到的知识</h4>
+        <summary>查看检索来源（{{ item.retrieved_docs.length }} 条）</summary>
 
         <div
           v-for="(doc, index) in item.retrieved_docs"
@@ -67,9 +71,10 @@
           {{ index + 1 }}. {{ doc.title }}
           <span>{{ doc.doc_type === 'disease' ? '常见病' : '药品' }}</span>
         </div>
-      </div>
+      </details>
 
-      <div class="feedback">
+      <details class="feedback">
+        <summary>评价这次回答</summary>
         <div class="feedback-title">
           <strong>回答评价</strong>
           <span v-if="item.rating">当前评分：{{ item.rating }} 星</span>
@@ -103,14 +108,14 @@
             保存评价
           </button>
         </div>
-      </div>
+      </details>
     </div>
   </div>
 </template>
 
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { apiUrl, cachedGetJson, clearPageCache } from '../api'
 
 const router = useRouter()
@@ -266,18 +271,35 @@ onMounted(() => {
 
 <style scoped>
 .history-card {
-  margin-bottom: 22px;
-  padding: 24px;
+  margin-bottom: 16px;
+  padding: 18px;
+}
+
+.empty-state {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+}
+
+.empty-state strong {
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.empty-state span {
+  color: var(--text-muted);
+  line-height: 1.7;
 }
 
 .card-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   border-bottom: 1px solid var(--border);
-  padding-bottom: 14px;
-  margin-bottom: 16px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
 }
 
 .card-header > div {
@@ -316,24 +338,63 @@ onMounted(() => {
   margin-bottom: 10px;
 }
 
+.answer {
+  padding: 12px;
+  background: #fbfdff;
+  border: 1px solid #e4edf3;
+  border-radius: var(--radius-sm);
+}
+
 pre {
+  max-height: 220px;
+  overflow: auto;
   white-space: pre-wrap;
-  line-height: 1.8;
+  line-height: 1.7;
   font-size: 15px;
   color: var(--text-secondary);
   font-family: "Microsoft YaHei", Arial, sans-serif;
 }
 
-.docs {
-  margin-top: 18px;
+.docs,
+.feedback {
+  margin-top: 14px;
+}
+
+.docs summary,
+.feedback summary {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 12px;
+  color: var(--text-secondary);
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.docs summary:hover,
+.feedback summary:hover {
+  color: var(--medical-blue);
+  background: var(--info-soft);
+  border-color: var(--info-border);
+}
+
+.docs[open] summary,
+.feedback[open] summary {
+  margin-bottom: 10px;
+  color: var(--medical-blue);
+  background: var(--info-soft);
+  border-color: var(--info-border);
 }
 
 .doc-item {
   background: #f8fafc;
   border: 1px solid var(--border);
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-radius: var(--radius-sm);
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .doc-item span {
@@ -347,10 +408,14 @@ pre {
 
 .feedback {
   display: grid;
-  gap: 12px;
-  margin-top: 18px;
-  padding-top: 16px;
+  gap: 10px;
+  padding-top: 12px;
   border-top: 1px solid var(--border);
+}
+
+.feedback:not([open]) {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .feedback-title {

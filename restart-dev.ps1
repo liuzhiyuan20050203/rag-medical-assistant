@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BackendDir = Join-Path $Root "backend"
 $FrontendDir = Join-Path $Root "frontend"
-$PythonExe = Join-Path $Root ".venv\Scripts\python.exe"
+$PythonExe = Join-Path $BackendDir ".venv\Scripts\python.exe"
 $BackendPort = 8000
 $FrontendPort = 5173
 
@@ -39,8 +39,8 @@ Write-Host "Restarting RAG Medical Assistant dev servers..."
 Stop-PortProcess -Port $BackendPort
 Stop-PortProcess -Port $FrontendPort
 
-$backendCommand = "cd /d `"$BackendDir`" && `"$PythonExe`" -m uvicorn main:app --reload --host 127.0.0.1 --port $BackendPort"
-$frontendCommand = "cd /d `"$FrontendDir`" && npm.cmd run dev -- --host 127.0.0.1 --port $FrontendPort"
+$backendCommand = "cd /d `"$BackendDir`" && `"$PythonExe`" -m uvicorn main:app --reload --host 127.0.0.1 --port $BackendPort > dev-server.log 2> dev-server.err.log"
+$frontendCommand = "cd /d `"$FrontendDir`" && npm.cmd run dev -- --host 127.0.0.1 --port $FrontendPort > dev-server.log 2> dev-server.err.log"
 
 Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $backendCommand -WorkingDirectory $BackendDir
 Start-Sleep -Seconds 2

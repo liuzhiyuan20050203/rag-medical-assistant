@@ -1,147 +1,106 @@
 <template>
   <div class="home">
-    <section class="hero" aria-labelledby="home-title">
+    <section class="home-hero" aria-labelledby="home-title">
       <div class="hero-copy">
-        <p class="eyebrow">RAG MEDICAL ASSISTANT</p>
-        <h1 id="home-title">AI 医疗 Agent 智能助手</h1>
+        <span class="eyebrow">AI MEDICAL ASSISTANT</span>
+        <h1 id="home-title">多模态医疗健康 Agent</h1>
         <p>
-          将文字、语音、图片线索统一交给 Agent 调度，先识别危险信号，
-          再结合常见病与药品知识库生成结构化参考建议。
+          一个入口完成症状咨询、用药查询、图片识别和语音输入。系统会先筛查危险信号，
+          再结合知识库与大模型给出清晰、可追问的健康参考。
         </p>
 
-        <div class="actions">
-          <RouterLink class="btn primary" to="/chat">进入 AI 医疗助手</RouterLink>
-          <RouterLink class="btn" to="/knowledge">查看知识库</RouterLink>
-        </div>
-
-        <div class="hero-tags" aria-label="核心能力">
-          <span>危险症状优先分诊</span>
-          <span>RAG 知识库检索</span>
-          <span>语音 / 图片 / 文本输入</span>
+        <div class="hero-actions">
+          <RouterLink class="primary-action" to="/chat">
+            <MessageCircle :size="19" aria-hidden="true" />
+            开始咨询
+          </RouterLink>
+          <RouterLink class="secondary-action" to="/history">
+            <History :size="18" aria-hidden="true" />
+            查看历史
+          </RouterLink>
         </div>
       </div>
 
-      <div class="hospital-visual" aria-hidden="true">
-        <div class="building">
-          <div class="building-top">
-            <span>Agent 调度台</span>
-            <svg viewBox="0 0 24 24">
-              <path d="M9.2 3.8h5.6v5.4h5.4v5.6h-5.4v5.4H9.2v-5.4H3.8V9.2h5.4z" />
-            </svg>
+      <div class="hero-checklist" aria-label="核心能力">
+        <div v-for="item in heroChecks" :key="item.title" class="check-item">
+          <component :is="item.icon" :size="22" aria-hidden="true" />
+          <div>
+            <strong>{{ item.title }}</strong>
+            <span>{{ item.description }}</span>
           </div>
-          <div class="window-grid">
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-          </div>
-        </div>
-
-        <div class="vital-card">
-          <span>AI 预问诊</span>
-          <strong>风险分级</strong>
-          <div class="pulse-line"></div>
-        </div>
-
-        <div class="pharmacy-card">
-          <span>统一咨询入口</span>
-          <div class="capsules">
-            <i></i>
-            <i></i>
-            <i></i>
-          </div>
-          <strong>症状 / 药品 / 图片线索</strong>
         </div>
       </div>
     </section>
 
-    <section class="stats" aria-label="系统数据概览">
-      <article class="stat-card">
+    <section class="quick-entry" aria-label="常用入口">
+      <RouterLink
+        v-for="item in quickActions"
+        :key="item.title"
+        class="entry-card"
+        :to="item.to"
+      >
+        <component :is="item.icon" :size="24" aria-hidden="true" />
+        <div>
+          <strong>{{ item.title }}</strong>
+          <span>{{ item.description }}</span>
+        </div>
+      </RouterLink>
+    </section>
+
+    <section class="system-strip" aria-label="系统数据概览">
+      <article>
         <strong>{{ stats.knowledge.disease_count }}</strong>
-        <span>常见病知识</span>
+        <span>疾病知识</span>
       </article>
-
-      <article class="stat-card">
+      <article>
         <strong>{{ stats.knowledge.medicine_count }}</strong>
-        <span>常见药品</span>
+        <span>药品说明</span>
       </article>
-
-      <article class="stat-card">
+      <article>
         <strong>{{ stats.knowledge.warning_rule_count }}</strong>
-        <span>危险症状规则</span>
+        <span>危险规则</span>
       </article>
-
-      <article class="stat-card">
+      <article>
         <strong>{{ stats.history.total_history }}</strong>
-        <span>累计问答记录</span>
-      </article>
-
-      <article class="stat-card warning">
-        <strong>{{ stats.history.warning_count }}</strong>
-        <span>危险提醒次数</span>
-      </article>
-
-      <article class="stat-card">
-        <strong>{{ stats.history.rag_count }}</strong>
-        <span>RAG 检索问答</span>
+        <span>累计咨询</span>
       </article>
     </section>
 
-    <section class="workflow">
+    <section class="flow-section" aria-labelledby="flow-title">
       <div class="section-heading">
-        <p class="eyebrow">CLINICAL WORKFLOW</p>
-        <h2>从用户输入到可靠回答的 Agent 流程</h2>
+        <span class="eyebrow">HOW IT WORKS</span>
+        <h2 id="flow-title">用户只需要提问，复杂流程交给 Agent</h2>
       </div>
 
-      <div class="route-grid">
-        <article
-          v-for="item in clinicalRoutes"
-          :key="item.title"
-          class="route-card"
-        >
+      <div class="flow-grid">
+        <article v-for="item in workflow" :key="item.title" class="flow-card">
           <span>{{ item.step }}</span>
-          <h3>{{ item.title }}</h3>
+          <strong>{{ item.title }}</strong>
           <p>{{ item.description }}</p>
         </article>
       </div>
     </section>
 
-    <section class="pharmacy-band" aria-labelledby="pharmacy-title">
-      <div>
-        <p class="eyebrow">AGENT WORKSPACE</p>
-        <h2 id="pharmacy-title">把独立功能收束到一个对话入口</h2>
-        <p>
-          用户不需要区分症状咨询、用药核对或图片识别，直接在 AI 医疗助手中输入即可。
-          管理员仍可在后台查看 Agent 调度、检索日志和知识库补充入口。
-        </p>
-      </div>
-
-      <div class="pharmacy-list">
-        <article
-          v-for="item in pharmacyHighlights"
-          :key="item.title"
-          class="pharmacy-item"
-        >
-          <strong>{{ item.title }}</strong>
-          <span>{{ item.description }}</span>
-        </article>
-      </div>
-    </section>
-
-    <section class="notice">
-      <strong>安全提示：</strong>
-      本系统仅提供健康信息参考，不能替代医生诊断或药师指导。如症状严重或持续加重，请及时就医。
+    <section class="safety-note">
+      <ShieldAlert :size="20" aria-hidden="true" />
+      <p>
+        本系统仅提供健康信息参考，不能替代医生诊断或药师指导。出现胸痛、呼吸困难、
+        意识异常、高热不退等情况，请及时就医。
+      </p>
     </section>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
+import {
+  BookOpen,
+  History,
+  MessageCircle,
+  SearchCheck,
+  ShieldAlert,
+  ShieldCheck,
+} from '@lucide/vue'
 import { cachedGetJson } from '../api'
 
 const stats = ref({
@@ -158,36 +117,60 @@ const stats = ref({
   },
 })
 
-const clinicalRoutes = [
+const heroChecks = [
   {
-    step: '01',
-    title: '危险症状预筛查',
-    description: '优先识别胸痛、呼吸困难、意识异常等信号，避免把高风险情况误当作普通咨询。',
+    icon: ShieldCheck,
+    title: '先做安全分流',
+    description: '优先识别危险症状和需要尽快就医的情况。',
   },
   {
-    step: '02',
-    title: '常见病知识匹配',
-    description: '结合症状描述检索疾病知识库，返回可能相关方向、护理建议和就医提醒。',
+    icon: SearchCheck,
+    title: '再检索知识库',
+    description: '结合疾病、药品和危险规则做 RAG 检索。',
   },
   {
-    step: '03',
-    title: '用药安全核对',
-    description: '围绕药品类别、禁忌人群和不良反应进行说明，强调遵医嘱和说明书。',
+    icon: MessageCircle,
+    title: '最后生成回答',
+    description: '用更自然的语言整理建议，并支持继续追问。',
   },
 ]
 
-const pharmacyHighlights = [
+const quickActions = [
   {
-    title: '药品类别',
-    description: '解热镇痛、抗过敏、止泻补液等常见类别清晰归档。',
+    icon: MessageCircle,
+    title: 'AI 健康助手',
+    description: '文字、语音、图片都从这里开始。',
+    to: '/chat',
   },
   {
-    title: '禁忌人群',
-    description: '儿童、孕妇、老人、慢性病患者等特殊人群重点提示。',
+    icon: BookOpen,
+    title: '知识库',
+    description: '查看疾病、药品和危险规则数据。',
+    to: '/knowledge',
   },
   {
-    title: '不良反应',
-    description: '胃肠不适、嗜睡、过敏等风险按字段单独展示。',
+    icon: History,
+    title: '历史记录',
+    description: '继续之前的会话或查看回答。',
+    to: '/history',
+  },
+]
+
+const workflow = [
+  {
+    step: '01',
+    title: '输入问题',
+    description: '用户可以直接描述症状，也可以上传药盒、皮肤照片、检查单等图片。',
+  },
+  {
+    step: '02',
+    title: 'Agent 调度',
+    description: '统一处理文本、语音转文字和图片识别结果，判断是否需要追问或检索。',
+  },
+  {
+    step: '03',
+    title: '给出建议',
+    description: '回答会尽量给出下一步行动、风险提醒和可继续补充的问题。',
   },
 ]
 
@@ -207,431 +190,343 @@ onMounted(() => {
 <style scoped>
 .home {
   display: grid;
-  gap: 28px;
+  gap: 20px;
 }
 
-.hero {
-  position: relative;
+.home-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
-  gap: 36px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+  gap: 28px;
   align-items: center;
-  overflow: hidden;
-  min-height: 420px;
-  padding: clamp(30px, 5vw, 58px);
+  padding: clamp(26px, 4vw, 42px);
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(232, 248, 250, 0.86)),
-    radial-gradient(circle at 85% 20%, rgba(37, 99, 235, 0.16), transparent 30%);
-  border: 1px solid rgba(37, 99, 235, 0.12);
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(241, 248, 251, 0.9)),
+    var(--surface);
+  border: 1px solid var(--border);
   border-radius: 8px;
 }
 
 .hero-copy {
-  position: relative;
-  z-index: 1;
+  min-width: 0;
 }
 
 .eyebrow {
+  display: inline-flex;
   margin-bottom: 10px;
   color: var(--pharmacy-teal);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 900;
   letter-spacing: 0;
 }
 
-.hero h1 {
-  max-width: 640px;
+.hero-copy h1 {
+  max-width: 720px;
   color: var(--text-primary);
-  font-size: clamp(34px, 5vw, 56px);
+  font-size: clamp(34px, 5vw, 48px);
   font-weight: 900;
-  line-height: 1.08;
+  line-height: 1.14;
 }
 
-.hero-copy > p:not(.eyebrow) {
-  max-width: 680px;
-  margin-top: 20px;
+.hero-copy p {
+  max-width: 760px;
+  margin-top: 16px;
   color: var(--text-secondary);
-  font-size: 17px;
-  line-height: 1.9;
+  font-size: 16px;
+  line-height: 1.85;
 }
 
-.actions {
+.hero-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-top: 28px;
+  margin-top: 24px;
 }
 
-.btn {
+.primary-action,
+.secondary-action,
+.entry-card {
+  text-decoration: none;
+}
+
+.primary-action,
+.secondary-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 46px;
-  padding: 0 20px;
-  color: var(--text-primary);
-  text-decoration: none;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 8px;
+  font-weight: 900;
+}
+
+.primary-action {
+  color: #ffffff;
+  background: var(--medical-blue);
+  border: 1px solid var(--medical-blue);
+  box-shadow: 0 12px 22px rgba(37, 99, 235, 0.18);
+}
+
+.primary-action:hover {
+  background: var(--medical-blue-dark);
+}
+
+.secondary-action {
+  color: var(--text-secondary);
+  background: #ffffff;
+  border: 1px solid var(--border);
+}
+
+.secondary-action:hover {
+  color: var(--medical-blue);
+  background: var(--info-soft);
+  border-color: var(--info-border);
+}
+
+.hero-checklist {
+  display: grid;
+  gap: 12px;
+}
+
+.check-item {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: var(--shadow-sm);
-  font-weight: 800;
 }
 
-.btn.primary {
-  color: #ffffff;
-  background: linear-gradient(135deg, var(--medical-blue), var(--pharmacy-teal));
-  border-color: transparent;
-}
-
-.hero-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 22px;
-}
-
-.hero-tags span {
-  padding: 7px 10px;
+.check-item svg {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  padding: 9px;
   color: #0f766e;
   background: #ecfdf5;
-  border: 1px solid #bce7dd;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.hospital-visual {
-  position: relative;
-  min-height: 340px;
-}
-
-.building {
-  position: absolute;
-  right: 24px;
-  bottom: 8px;
-  width: min(320px, 82%);
-  padding: 18px;
-  background: #ffffff;
-  border: 1px solid #cfe3ee;
-  border-radius: 8px;
-  box-shadow: var(--shadow-md);
-}
-
-.building-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 14px;
-  color: #ffffff;
-  background: linear-gradient(135deg, var(--medical-blue), var(--clinical-green));
   border-radius: 8px;
 }
 
-.building-top span {
-  font-weight: 800;
-}
-
-.building-top svg {
-  width: 28px;
-  height: 28px;
-  fill: currentColor;
-}
-
-.window-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.window-grid i {
+.check-item strong,
+.check-item span {
   display: block;
-  height: 46px;
-  background:
-    linear-gradient(180deg, rgba(226, 246, 255, 0.95), rgba(202, 232, 246, 0.8)),
-    #e7f3f8;
-  border: 1px solid #cfe3ee;
-  border-radius: 6px;
 }
 
-.vital-card,
-.pharmacy-card {
-  position: absolute;
-  left: 4px;
-  width: 230px;
-  padding: 16px;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(14, 116, 144, 0.18);
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
-}
-
-.vital-card {
-  top: 20px;
-}
-
-.pharmacy-card {
-  bottom: 26px;
-}
-
-.vital-card span,
-.pharmacy-card span {
-  display: block;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.vital-card strong,
-.pharmacy-card strong {
-  display: block;
-  margin-top: 4px;
+.check-item strong {
   color: var(--text-primary);
   font-weight: 900;
 }
 
-.pulse-line {
-  position: relative;
-  height: 46px;
-  margin-top: 10px;
-  overflow: hidden;
-  background: #eef7fb;
-  border-radius: 6px;
+.check-item span {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
 }
 
-.pulse-line::before {
-  position: absolute;
-  inset: 11px 10px;
-  content: "";
-  background:
-    linear-gradient(135deg, transparent 0 16%, var(--danger) 17% 20%, transparent 21% 32%, var(--danger) 33% 36%, transparent 37% 50%, var(--danger) 51% 54%, transparent 55% 100%);
-}
-
-.capsules {
-  display: flex;
-  gap: 8px;
-  margin: 13px 0 10px;
-}
-
-.capsules i {
-  display: block;
-  width: 42px;
-  height: 18px;
-  background: linear-gradient(90deg, #22c55e 50%, #f8fafc 50%);
-  border: 1px solid #b7d4df;
-  border-radius: 999px;
-}
-
-.capsules i:nth-child(2) {
-  background: linear-gradient(90deg, #38bdf8 50%, #f8fafc 50%);
-}
-
-.capsules i:nth-child(3) {
-  background: linear-gradient(90deg, #f59e0b 50%, #f8fafc 50%);
-}
-
-.stats {
+.quick-entry {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
 
-.stat-card {
-  min-height: 112px;
-  padding: 20px 16px;
-  text-align: center;
-  background: var(--surface);
+.entry-card {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 104px;
+  padding: 18px;
+  color: var(--text-primary);
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.entry-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.entry-card svg {
+  width: 46px;
+  height: 46px;
+  padding: 10px;
+  color: var(--medical-blue);
+  background: var(--info-soft);
+  border-radius: 8px;
+}
+
+.entry-card:nth-child(2) svg {
+  color: #0f766e;
+  background: #ecfdf5;
+}
+
+.entry-card:nth-child(3) svg {
+  color: #b45309;
+  background: #fffbeb;
+}
+
+.entry-card strong,
+.entry-card span {
+  display: block;
+}
+
+.entry-card strong {
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.entry-card span {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.system-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  padding: 12px;
+  background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: var(--shadow-sm);
 }
 
-.stat-card strong {
-  display: block;
-  color: var(--medical-blue);
-  font-size: 31px;
-  font-weight: 900;
-  line-height: 1.15;
-}
-
-.stat-card span {
-  display: block;
-  margin-top: 8px;
-  color: var(--text-muted);
-  font-weight: 800;
-}
-
-.stat-card.warning strong {
-  color: var(--danger);
-}
-
-.workflow,
-.pharmacy-band,
-.notice {
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid var(--border);
+.system-strip article {
+  min-height: 74px;
+  padding: 12px;
+  text-align: center;
+  background: #f8fbfd;
+  border: 1px solid #e4edf3;
   border-radius: 8px;
 }
 
-.workflow {
-  padding: 28px;
+.system-strip strong {
+  display: block;
+  color: var(--medical-blue);
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.system-strip span {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.flow-section {
+  padding: 22px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 .section-heading {
-  margin-bottom: 18px;
+  display: grid;
+  gap: 4px;
+  margin-bottom: 16px;
 }
 
-.section-heading h2,
-.pharmacy-band h2 {
+.section-heading h2 {
   color: var(--text-primary);
   font-size: 24px;
   font-weight: 900;
   line-height: 1.3;
 }
 
-.route-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-
-.route-card {
-  padding: 22px;
-  background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
-}
-
-.route-card span {
-  display: inline-grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  color: #ffffff;
-  background: var(--medical-blue);
-  border-radius: 8px;
-  font-weight: 900;
-}
-
-.route-card h3 {
-  margin-top: 16px;
-  color: var(--text-primary);
-  font-size: 18px;
-  font-weight: 900;
-}
-
-.route-card p {
-  margin-top: 8px;
-  color: var(--text-secondary);
-  line-height: 1.8;
-}
-
-.pharmacy-band {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(320px, 1.1fr);
-  gap: 28px;
-  align-items: center;
-  padding: 28px;
-  background:
-    linear-gradient(135deg, rgba(239, 246, 255, 0.84), rgba(236, 253, 245, 0.84)),
-    #ffffff;
-}
-
-.pharmacy-band p:not(.eyebrow) {
-  margin-top: 10px;
-  color: var(--text-secondary);
-  line-height: 1.85;
-}
-
-.pharmacy-list {
+.flow-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
 }
 
-.pharmacy-item {
-  min-height: 132px;
-  padding: 18px;
+.flow-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
   background: #ffffff;
-  border: 1px solid #cfe3ee;
+  border: 1px solid var(--border);
   border-radius: 8px;
 }
 
-.pharmacy-item strong {
-  display: block;
-  color: var(--pharmacy-teal);
+.flow-card > span {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: #ffffff;
+  background: var(--medical-blue);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.flow-card strong {
+  color: var(--text-primary);
   font-size: 17px;
   font-weight: 900;
 }
 
-.pharmacy-item span {
-  display: block;
-  margin-top: 8px;
+.flow-card p {
   color: var(--text-secondary);
-  line-height: 1.7;
+  line-height: 1.75;
 }
 
-.notice {
-  padding: 18px 22px;
+.safety-note {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 15px 18px;
   color: #92400e;
   background: #fff7ed;
-  border-color: #fed7aa;
-  line-height: 1.8;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  line-height: 1.75;
 }
 
-.notice strong {
-  font-weight: 900;
+.safety-note svg {
+  margin-top: 4px;
+  color: #d97706;
 }
 
-@media (max-width: 980px) {
-  .hero,
-  .pharmacy-band {
+@media (max-width: 920px) {
+  .home-hero {
     grid-template-columns: 1fr;
   }
 
-  .hospital-visual {
-    min-height: 300px;
-  }
-
-  .stats {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .route-grid,
-  .pharmacy-list {
+  .quick-entry,
+  .flow-grid {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 640px) {
-  .hero,
-  .workflow,
-  .pharmacy-band {
-    padding: 22px;
+  .home-hero,
+  .flow-section {
+    padding: 18px;
   }
 
-  .hero h1 {
+  .hero-copy h1 {
     font-size: 32px;
   }
 
-  .hospital-visual {
-    min-height: 330px;
-  }
-
-  .building {
-    right: 0;
-    width: 92%;
-  }
-
-  .vital-card,
-  .pharmacy-card {
-    left: 0;
-    width: 210px;
-  }
-
-  .stats {
+  .system-strip {
     grid-template-columns: repeat(2, 1fr);
   }
 }

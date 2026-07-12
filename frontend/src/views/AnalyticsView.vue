@@ -6,6 +6,7 @@
         <h2>可视化分析</h2>
         <p>
           汇总用户症状提问、疾病检索、药品查询、风险等级和回答反馈，体现系统的数据分析能力。
+          页面默认使用快速统计，避免质量复检阻塞加载。
         </p>
       </div>
 
@@ -38,6 +39,123 @@
       <article class="ui-card">
         <strong>{{ analytics.overview.knowledge_count }}</strong>
         <span>知识总量</span>
+      </article>
+    </section>
+
+    <section class="insight-grid">
+      <article class="insight-card ui-card">
+        <div>
+          <span>风险咨询占比</span>
+          <strong>{{ formatPercent(warningRatio) }}</strong>
+        </div>
+        <div class="meter-track">
+          <i class="danger" :style="{ width: ratioWidth(warningRatio) }"></i>
+        </div>
+        <p>高风险提醒 {{ analytics.overview.warning_count }} 次，用来观察系统是否及时拦截危险症状。</p>
+      </article>
+
+      <article class="insight-card ui-card">
+        <div>
+          <span>用户反馈覆盖</span>
+          <strong>{{ formatPercent(feedbackCoverage) }}</strong>
+        </div>
+        <div class="meter-track">
+          <i :style="{ width: ratioWidth(feedbackCoverage) }"></i>
+        </div>
+        <p>{{ analytics.overview.feedback_count }} 条反馈参与评分，反馈越多越利于判断回答是否真的有用。</p>
+      </article>
+
+      <article class="insight-card ui-card">
+        <div>
+          <span>RAG 召回覆盖</span>
+          <strong>{{ formatPercent(retrievalCoverage) }}</strong>
+        </div>
+        <div class="meter-track">
+          <i class="success" :style="{ width: ratioWidth(retrievalCoverage) }"></i>
+        </div>
+        <p>无召回 {{ analytics.rag_quality.no_retrieval_count }} 次，可用于定位知识库缺口和检索失败场景。</p>
+      </article>
+
+      <article class="insight-card ui-card">
+        <div>
+          <span>药品咨询占比</span>
+          <strong>{{ formatPercent(medicineSearchRatio) }}</strong>
+        </div>
+        <div class="meter-track">
+          <i class="medicine" :style="{ width: ratioWidth(medicineSearchRatio) }"></i>
+        </div>
+        <p>药品查询 {{ analytics.overview.medicine_search_count }} 次，适合评估药品说明书数据是否需要扩充。</p>
+      </article>
+    </section>
+
+    <section class="analytics-panels">
+      <article class="analytics-panel ui-card">
+        <div class="section-title compact">
+          <div>
+            <p class="eyebrow">KNOWLEDGE</p>
+            <h3>知识库结构</h3>
+          </div>
+        </div>
+
+        <div class="split-meter" aria-label="疾病和药品知识库占比">
+          <i class="disease" :style="{ width: ratioWidth(diseaseKnowledgeRatio) }"></i>
+          <i class="medicine" :style="{ width: ratioWidth(medicineKnowledgeRatio) }"></i>
+        </div>
+
+        <div class="panel-stat-list">
+          <div>
+            <span>疾病知识</span>
+            <strong>{{ analytics.overview.disease_count }} 条 · {{ formatPercent(diseaseKnowledgeRatio) }}</strong>
+          </div>
+          <div>
+            <span>药品知识</span>
+            <strong>{{ analytics.overview.medicine_count }} 条 · {{ formatPercent(medicineKnowledgeRatio) }}</strong>
+          </div>
+          <div>
+            <span>知识总量</span>
+            <strong>{{ knowledgeTotal }} 条</strong>
+          </div>
+        </div>
+      </article>
+
+      <article class="analytics-panel ui-card">
+        <div class="section-title compact">
+          <div>
+            <p class="eyebrow">AGENT MIX</p>
+            <h3>Agent 调用分布</h3>
+          </div>
+        </div>
+
+        <div v-if="analytics.action_distribution.length" class="action-mini-list">
+          <div v-for="item in analytics.action_distribution" :key="`mini-${item.action}`" class="action-mini-row">
+            <div>
+              <span>{{ item.label }}</span>
+              <strong>{{ item.count }} 次</strong>
+            </div>
+            <div class="meter-track">
+              <i :style="{ width: actionWidth(item) }"></i>
+            </div>
+          </div>
+        </div>
+
+        <p v-else class="empty-state ui-empty">暂无 Agent 调度记录，完成几轮 AI 助手对话后会显示。</p>
+      </article>
+
+      <article class="analytics-panel ui-card">
+        <div class="section-title compact">
+          <div>
+            <p class="eyebrow">DATA HEALTH</p>
+            <h3>数据健康状态</h3>
+          </div>
+        </div>
+
+        <div class="health-list">
+          <div v-for="item in healthItems" :key="item.label" :class="['health-item', item.tone]">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
+            <small>{{ item.hint }}</small>
+          </div>
+        </div>
       </article>
     </section>
 
@@ -403,6 +521,83 @@ const totalRisk = computed(() => {
   return analytics.value.risk_distribution.reduce((sum, item) => sum + item.count, 0)
 })
 
+const safeDivide = (value, total) => {
+  const number = Number(value || 0)
+  const base = Number(total || 0)
+  if (!Number.isFinite(number) || !Number.isFinite(base) || base <= 0) return 0
+  return Math.max(0, Math.min(number / base, 1))
+}
+
+const knowledgeTotal = computed(() => {
+  const diseaseCount = Number(analytics.value.overview.disease_count || 0)
+  const medicineCount = Number(analytics.value.overview.medicine_count || 0)
+  return diseaseCount + medicineCount || Number(analytics.value.overview.knowledge_count || 0)
+})
+
+const warningRatio = computed(() => {
+  return safeDivide(analytics.value.overview.warning_count, analytics.value.overview.total_questions)
+})
+
+const feedbackCoverage = computed(() => {
+  return safeDivide(analytics.value.overview.feedback_count, analytics.value.overview.total_questions)
+})
+
+const medicineSearchRatio = computed(() => {
+  return safeDivide(analytics.value.overview.medicine_search_count, analytics.value.overview.total_questions)
+})
+
+const retrievalCoverage = computed(() => {
+  const total = analytics.value.rag_quality.total_cases
+  const noRetrieval = analytics.value.rag_quality.no_retrieval_count
+  return total ? 1 - safeDivide(noRetrieval, total) : 0
+})
+
+const diseaseKnowledgeRatio = computed(() => {
+  return safeDivide(analytics.value.overview.disease_count, knowledgeTotal.value)
+})
+
+const medicineKnowledgeRatio = computed(() => {
+  return safeDivide(analytics.value.overview.medicine_count, knowledgeTotal.value)
+})
+
+const totalActionCount = computed(() => {
+  return analytics.value.action_distribution.reduce((sum, item) => sum + Number(item.count || 0), 0)
+})
+
+const healthItems = computed(() => {
+  const unresolved = Number(analytics.value.quality_overview.current_unresolved_count || 0)
+  const lowConfidence = Number(analytics.value.quality_overview.low_confidence_count || 0)
+  const errorCount = Number(analytics.value.overview.error_count || 0)
+  const medicineGaps = Number(analytics.value.quality_overview.medicine_gap_count || 0)
+
+  return [
+    {
+      label: '待复核回答',
+      value: unresolved,
+      tone: unresolved > 0 ? 'warning' : 'good',
+      hint: unresolved > 0 ? '建议优先补充知识库或检查 Agent 判断' : '当前没有明显待复核回答',
+    },
+    {
+      label: '低置信记录',
+      value: lowConfidence,
+      tone: lowConfidence > 0 ? 'warning' : 'good',
+      hint: lowConfidence > 0 ? '说明部分回答证据不足，需要优化召回' : '置信度表现稳定',
+    },
+    {
+      label: '错误标记',
+      value: errorCount,
+      tone: errorCount > 0 ? 'danger' : 'good',
+      hint: errorCount > 0 ? '需要回看用户反馈和历史回答' : '暂无错误反馈',
+    },
+    {
+      label: '药品缺口',
+      value: medicineGaps,
+      tone: medicineGaps > 0 ? 'warning' : 'good',
+      hint: medicineGaps > 0 ? '可优先补充高频药品说明书' : '药品知识暂未暴露明显缺口',
+    },
+  ]
+})
+
 const riskGradient = computed(() => {
   if (!totalRisk.value) {
     return 'conic-gradient(var(--border) 0deg 360deg)'
@@ -426,6 +621,16 @@ const maxCount = (items) => {
 const barWidth = (item, items) => {
   const percent = (item.count / maxCount(items)) * 100
   return `${Math.max(percent, item.count > 0 ? 8 : 0)}%`
+}
+
+const ratioWidth = (ratio) => {
+  const number = Number(ratio || 0)
+  if (!Number.isFinite(number) || number <= 0) return '0%'
+  return `${Math.max(Math.min(number * 100, 100), 6)}%`
+}
+
+const actionWidth = (item) => {
+  return ratioWidth(safeDivide(item.count, totalActionCount.value))
 }
 
 const riskColor = (name) => {
@@ -486,10 +691,15 @@ const loadAnalytics = async (force = false) => {
   message.value = ''
 
   try {
-    analytics.value = await cachedGetJson('analytics:summary', '/api/analytics/summary', { force })
+    analytics.value = await cachedGetJson('analytics:summary', '/api/analytics/summary', {
+      force,
+      timeoutMs: 8000,
+    })
   } catch (error) {
     console.error(error)
-    message.value = '分析数据加载失败，请检查后端服务是否正常运行。'
+    message.value = error?.name === 'AbortError'
+      ? '分析数据加载超时，请稍后刷新，或减少深度复检数据量。'
+      : '分析数据加载失败，请检查后端服务是否正常运行。'
   } finally {
     loading.value = false
   }
@@ -569,6 +779,179 @@ onMounted(() => {
   margin-top: 8px;
   color: var(--text-muted);
   font-weight: 800;
+}
+
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.insight-card {
+  display: grid;
+  gap: 12px;
+  min-height: 172px;
+  padding: 18px;
+}
+
+.insight-card > div:first-child,
+.action-mini-row > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.insight-card span,
+.action-mini-row span,
+.panel-stat-list span {
+  color: var(--text-muted);
+  font-weight: 900;
+}
+
+.insight-card strong {
+  color: var(--medical-blue);
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.insight-card p {
+  color: var(--text-secondary);
+  line-height: 1.7;
+  font-weight: 700;
+}
+
+.meter-track {
+  height: 12px;
+  overflow: hidden;
+  background: var(--surface-soft);
+  border-radius: var(--radius-pill);
+}
+
+.meter-track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--medical-blue), var(--pharmacy-teal));
+  border-radius: inherit;
+}
+
+.meter-track i.success {
+  background: linear-gradient(90deg, var(--clinical-green), var(--pharmacy-teal));
+}
+
+.meter-track i.danger {
+  background: linear-gradient(90deg, var(--danger), var(--medicine-amber));
+}
+
+.meter-track i.medicine {
+  background: linear-gradient(90deg, var(--medicine-amber), var(--clinical-green));
+}
+
+.analytics-panels {
+  display: grid;
+  grid-template-columns: 1.05fr 1.15fr 1.2fr;
+  gap: 18px;
+}
+
+.analytics-panel {
+  min-height: 280px;
+  padding: 22px;
+}
+
+.split-meter {
+  display: flex;
+  height: 20px;
+  overflow: hidden;
+  background: var(--surface-soft);
+  border-radius: var(--radius-pill);
+}
+
+.split-meter i {
+  display: block;
+  min-width: 0;
+  height: 100%;
+}
+
+.split-meter .disease {
+  background: var(--medical-blue);
+}
+
+.split-meter .medicine {
+  background: var(--medicine-amber);
+}
+
+.panel-stat-list,
+.action-mini-list,
+.health-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.panel-stat-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-stat-list div:last-child {
+  border-bottom: 0;
+}
+
+.panel-stat-list strong,
+.action-mini-row strong {
+  color: var(--text-primary);
+  font-weight: 900;
+}
+
+.action-mini-row {
+  display: grid;
+  gap: 8px;
+}
+
+.health-item {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  background: #f8fbfd;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.health-item span {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.health-item strong {
+  color: var(--text-primary);
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.health-item small {
+  color: var(--text-secondary);
+  line-height: 1.55;
+  font-weight: 750;
+}
+
+.health-item.good {
+  border-color: rgba(16, 185, 129, 0.24);
+  background: rgba(236, 253, 245, 0.64);
+}
+
+.health-item.warning {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(255, 251, 235, 0.75);
+}
+
+.health-item.danger {
+  border-color: rgba(239, 68, 68, 0.24);
+  background: rgba(254, 242, 242, 0.74);
 }
 
 .chart-grid {
@@ -1022,6 +1405,11 @@ onMounted(() => {
     grid-template-columns: repeat(3, 1fr);
   }
 
+  .insight-grid,
+  .analytics-panels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .quality-grid {
     grid-template-columns: repeat(3, 1fr);
   }
@@ -1042,8 +1430,10 @@ onMounted(() => {
 
 @media (max-width: 640px) {
   .overview-grid,
+  .insight-grid,
+  .analytics-panels,
   .quality-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr;
   }
 
   .bar-row,
