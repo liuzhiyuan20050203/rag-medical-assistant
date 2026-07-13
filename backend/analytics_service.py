@@ -42,7 +42,7 @@ STATUS_LABELS = {
     "unresolved": "当前仍待改进",
     "needs_review": "当前需复核",
     "improved": "当前已改善",
-    "historical_only": "历史参考",
+    "historical_only": "历史待复核",
 }
 
 
@@ -250,7 +250,11 @@ def build_quality_diagnosis(history, deep_recheck=False):
         question = record.get("question", "")
         existing_docs = record.get("retrieved_docs") or []
         current_docs = current_search(question, top_k=3) if deep_recheck else existing_docs
-        current_status = current_issue_status(issue, record, current_docs)
+        current_status = (
+            current_issue_status(issue, record, current_docs)
+            if deep_recheck
+            else "historical_only"
+        )
         current_top_score = max_doc_score(current_docs)
         rechecked += 1
 
@@ -265,7 +269,12 @@ def build_quality_diagnosis(history, deep_recheck=False):
         }
         issue_rows.append(row)
 
-        if current_status in {"unresolved", "needs_review"}:
+        should_count_gap = (
+            current_status in {"unresolved", "needs_review"}
+            if deep_recheck
+            else bool(issue.get("needs_review"))
+        )
+        if should_count_gap:
             key = (issue.get("keyword") or "待补充条目", issue.get("issue_type") or "待复核")
             issue_counter[key] += 1
             issue_fix[key] = issue.get("suggested_fix", "")
@@ -273,8 +282,12 @@ def build_quality_diagnosis(history, deep_recheck=False):
             if len(issue_examples[key]) < 3:
                 issue_examples[key].append(question)
 
-    unresolved_rows = [item for item in issue_rows if item.get("status") in {"unresolved", "needs_review"}]
-    improved_rows = [item for item in issue_rows if item.get("status") == "improved"]
+    if deep_recheck:
+        unresolved_rows = [item for item in issue_rows if item.get("status") in {"unresolved", "needs_review"}]
+        improved_rows = [item for item in issue_rows if item.get("status") == "improved"]
+    else:
+        unresolved_rows = [item for item in issue_rows if item.get("needs_review")]
+        improved_rows = []
     low_confidence_rows = [
         item for item in issue_rows
         if safe_float(item.get("confidence")) < 0.6 and item.get("status") != "improved"
@@ -296,6 +309,7 @@ def build_quality_diagnosis(history, deep_recheck=False):
     ]
 
     return {
+        "analysis_mode": "current_recheck" if deep_recheck else "historical_snapshot",
         "quality_overview": {
             "rechecked_count": rechecked,
             "review_count": len(issue_rows),

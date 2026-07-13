@@ -9,9 +9,14 @@
         </p>
       </div>
 
-      <button type="button" @click="loadAnalytics(true)" :disabled="loading">
-        {{ loading ? '刷新中...' : '刷新分析' }}
-      </button>
+      <div class="hero-actions">
+        <button type="button" @click="loadAnalytics(true, false)" :disabled="loading">
+          {{ loading ? '刷新中...' : '刷新历史统计' }}
+        </button>
+        <button type="button" class="secondary-action" @click="loadAnalytics(true, true)" :disabled="loading">
+          使用当前知识库重新诊断
+        </button>
+      </div>
     </section>
 
     <section class="kpi-grid">
@@ -310,7 +315,7 @@
         <div class="section-title compact">
           <div>
             <p class="eyebrow">IMPROVED</p>
-            <h3>已改善样本</h3>
+            <h3>{{ isCurrentRecheck ? '已改善样本' : '历史样本复测待执行' }}</h3>
           </div>
         </div>
 
@@ -321,7 +326,9 @@
             <small>{{ item.status_label }}</small>
           </div>
         </div>
-        <p v-else class="empty-state">暂无已改善记录。</p>
+        <p v-else class="empty-state">
+          {{ isCurrentRecheck ? '暂无已改善记录。' : '点击“使用当前知识库重新诊断”后查看改善结果。' }}
+        </p>
       </article>
     </section>
 
@@ -445,6 +452,7 @@ const sectionMeta = {
 const activeSectionMeta = computed(() => sectionMeta[activeSection.value] || sectionMeta.overview)
 
 const analytics = ref({
+  analysis_mode: 'historical_snapshot',
   overview: {
     total_questions: 0,
     warning_count: 0,
@@ -482,6 +490,8 @@ const analytics = ref({
   low_confidence_cases: [],
   medicine_gap_stats: [],
 })
+
+const isCurrentRecheck = computed(() => analytics.value.analysis_mode === 'current_recheck')
 
 const safeNumber = (value) => {
   const number = Number(value || 0)
@@ -653,15 +663,20 @@ const wordStyle = (item) => {
   }
 }
 
-const loadAnalytics = async (force = false) => {
+const loadAnalytics = async (force = false, deepRecheck = false) => {
   loading.value = true
   message.value = ''
 
   try {
-    analytics.value = await cachedGetJson('analytics:summary', '/api/analytics/summary', {
+    const cacheKey = deepRecheck ? 'analytics:summary:current-recheck' : 'analytics:summary'
+    const path = deepRecheck ? '/api/analytics/summary?deep_recheck=true' : '/api/analytics/summary'
+    analytics.value = await cachedGetJson(cacheKey, path, {
       force,
-      timeoutMs: 8000,
+      timeoutMs: deepRecheck ? 45000 : 8000,
     })
+    message.value = deepRecheck
+      ? '已使用当前知识库重新诊断历史异常样本。'
+      : ''
   } catch (error) {
     console.error(error)
     message.value = error?.name === 'AbortError'
@@ -691,6 +706,20 @@ onMounted(() => {
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: var(--shadow-sm);
+}
+
+.hero-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.secondary-action {
+  color: var(--medical-blue);
+  background: #eff6ff;
+  border-color: #bfdbfe;
 }
 
 .analytics-hero {

@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BackendDir = Join-Path $Root "backend"
 $FrontendDir = Join-Path $Root "frontend"
-$PythonExe = Join-Path $BackendDir ".venv\Scripts\python.exe"
+$PythonExe = Join-Path $Root ".venv\Scripts\python.exe"
 $BackendPort = 8000
 $FrontendPort = 5173
 

@@ -182,11 +182,19 @@ def ensure_history_review_columns():
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'review_status'")
-            if not cursor.fetchone():
+            review_status_column = cursor.fetchone()
+            if not review_status_column:
                 cursor.execute(
                     """
                     ALTER TABLE chat_history
-                    ADD COLUMN review_status VARCHAR(30) NOT NULL DEFAULT 'pending' AFTER feedback_text
+                    ADD COLUMN review_status VARCHAR(30) NOT NULL DEFAULT 'auto' AFTER feedback_text
+                    """
+                )
+            elif review_status_column.get("Default") != "auto":
+                cursor.execute(
+                    """
+                    ALTER TABLE chat_history
+                    MODIFY COLUMN review_status VARCHAR(30) NOT NULL DEFAULT 'auto'
                     """
                 )
 
@@ -198,6 +206,17 @@ def ensure_history_review_columns():
                     ADD COLUMN review_note LONGTEXT NULL AFTER review_status
                     """
                 )
+
+            # Older versions defaulted every row to pending. Rows without an
+            # actual review action must return to automatic classification.
+            cursor.execute(
+                """
+                UPDATE chat_history
+                SET review_status = 'auto'
+                WHERE review_status = 'pending'
+                  AND (review_note IS NULL OR review_note = '')
+                """
+            )
 
     _REVIEW_COLUMNS_READY = True
 
@@ -242,7 +261,7 @@ def row_to_record(row):
         "satisfaction": row.get("satisfaction", "") or "",
         "rating": row.get("rating", 0) or 0,
         "feedback_text": row.get("feedback_text", "") or "",
-        "review_status": row.get("review_status", "") or "pending",
+        "review_status": row.get("review_status", "") or "auto",
         "review_note": row.get("review_note", "") or "",
         "create_time": format_time(row.get("create_time")),
         "review_time": format_time(row.get("review_time"))
@@ -307,7 +326,7 @@ def save_history(history_list):
                         item.get("satisfaction", ""),
                         item.get("rating", 0),
                         item.get("feedback_text", ""),
-                        item.get("review_status", "pending"),
+                        item.get("review_status", "auto"),
                         item.get("review_note", ""),
                         item.get("create_time") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         item.get("review_time") or None
@@ -363,7 +382,7 @@ def add_history_record(
             review_status,
             review_note
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, '', '', 0, '', 'pending', '')
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, '', '', 0, '', 'auto', '')
     """
 
     with get_connection() as conn:
@@ -568,9 +587,12 @@ def classify_review_issue(record):
         or "暂未在药品知识库" in answer
         or "知识库匹配度较低" in answer
     )
-    review_status = record.get("review_status") or ("pending" if needs_review else "processed")
-    if review_status in {"processed", "ignored"}:
-        needs_review = False
+    stored_review_status = record.get("review_status") or "auto"
+    if stored_review_status == "auto":
+        review_status = "pending" if needs_review else "not_required"
+    else:
+        review_status = stored_review_status
+        needs_review = review_status == "pending"
 
     return {
         "record_id": record.get("id"),
@@ -606,6 +628,10 @@ def get_review_issue_list(limit: int = 100, only_need_review: bool = False):
         classify_review_issue(record)
         for record in get_history_list(limit=limit)
     ]
+
+    # Normal high-confidence answers are not review tickets. Keep manually
+    # processed/ignored tickets so the admin can audit completed work.
+    issues = [item for item in issues if item.get("review_status") != "not_required"]
 
     if only_need_review:
         issues = [item for item in issues if item.get("needs_review")]
