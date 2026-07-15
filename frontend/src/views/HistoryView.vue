@@ -1,197 +1,237 @@
 <template>
   <div class="page">
     <div class="page-title ui-page-heading">
-      <h2>问答历史记录</h2>
+      <h2>历史记录</h2>
       <p>
-        系统会自动保存最近的 AI 医疗助手对话，便于查看用户问题、系统回答、危险提醒和检索结果。
+        登录后可查看自己的历史咨询记录。多轮咨询按完整对话展示，旧版单次问答也会合并到同一个列表中。
       </p>
     </div>
 
-    <div class="toolbar ui-toolbar">
-      <button class="ui-button ui-button--primary" @click="loadHistory(true)" :disabled="loading">
-        {{ loading ? '加载中...' : '刷新记录' }}
-      </button>
+    <div v-if="!isLoggedIn" class="login-required ui-empty">
+      <strong>登录后查看个人历史记录</strong>
+      <span>游客咨询不会显示在个人历史页。登录或注册后，可以查看自己的历史记录。</span>
+      <div class="login-actions">
+        <RouterLink class="ui-button ui-button--primary" to="/login">
+          去登录
+        </RouterLink>
+        <RouterLink class="ui-button ui-button--soft" to="/register">
+          注册账号
+        </RouterLink>
+      </div>
+    </div>
 
-      <button class="clear-btn ui-button ui-button--danger" @click="clearHistory">
-        清空历史
+    <div v-if="isLoggedIn" class="toolbar ui-toolbar">
+      <button class="ui-button ui-button--primary" @click="loadAllHistory(true)" :disabled="loading">
+        {{ loading ? '加载中...' : '刷新历史记录' }}
       </button>
     </div>
 
-    <div v-if="historyList.length === 0" class="empty-state ui-empty">
+    <div v-if="isLoggedIn && !loading && historyItems.length === 0" class="empty-state ui-empty">
       <strong>还没有历史记录</strong>
-      <span>完成一次 AI 健康咨询后，系统会在这里保存对话，方便之后继续追问。</span>
+      <span>完成一次 AI 健康咨询后，系统会在这里保存历史记录。</span>
       <RouterLink class="ui-button ui-button--primary" to="/chat">
         去 AI 助手咨询
       </RouterLink>
     </div>
 
-    <div v-for="item in historyList" :key="item.id" class="history-card ui-card">
-      <div class="card-header">
-        <div>
-          <strong>问题：{{ displayQuestion(item.question) }}</strong>
-          <span>{{ item.create_time }}</span>
-        </div>
-        <button
-          v-if="item.session_id"
-          type="button"
-          class="continue-btn ui-button ui-button--soft"
-          @click="continueConversation(item.session_id)"
-        >
-          继续对话
-        </button>
-      </div>
-
-      <div v-if="hasImageInput(item.question)" class="input-tag ui-badge ui-badge--info">
-        已上传图片，图片识别信息已作为 AI 分析输入。
-      </div>
-
-      <div
-        v-if="item.warning && item.warning.has_warning"
-        class="warning ui-alert ui-alert--error"
-      >
-        危险提醒：{{ item.warning.matched.join('、') }}
-      </div>
-
-      <div class="answer">
-        <h4>系统回答</h4>
-        <pre>{{ item.answer }}</pre>
-      </div>
-
-      <details
-        v-if="item.retrieved_docs && item.retrieved_docs.length > 0"
-        class="docs"
-      >
-        <summary>查看检索来源（{{ item.retrieved_docs.length }} 条）</summary>
-
-        <div
-          v-for="(doc, index) in item.retrieved_docs"
-          :key="index"
-          class="doc-item"
-        >
-          {{ index + 1 }}. {{ doc.title }}
-          <span>{{ doc.doc_type === 'disease' ? '常见病' : '药品' }}</span>
-        </div>
-      </details>
-
-      <details class="feedback">
-        <summary>评价这次回答</summary>
-        <div class="feedback-title">
-          <strong>回答评价</strong>
-          <span v-if="item.rating">当前评分：{{ item.rating }} 星</span>
-          <span v-else>还没有评价</span>
-        </div>
-
-        <div class="feedback-editor">
-          <div class="star-rating" aria-label="五星评价">
-            <button
-              v-for="star in 5"
-              :key="star"
-              type="button"
-              :class="{ active: star <= getDraft(item).rating }"
-              @click="getDraft(item).rating = star"
-            >
-              ★
-            </button>
+    <section v-if="isLoggedIn && historyItems.length" class="history-list">
+      <article v-for="item in historyItems" :key="item.key" class="history-card ui-card">
+        <div class="card-header">
+          <div>
+            <strong>{{ item.title }}</strong>
+            <span>{{ item.time }} · {{ item.summary }}</span>
           </div>
 
-          <textarea
-            class="ui-textarea"
-            v-model="getDraft(item).feedbackText"
-            placeholder="填写详细评价，例如：回答是否准确、是否看得懂、还需要补充哪些内容。"
-          ></textarea>
-
-          <button
-            class="feedback-submit ui-button ui-button--primary"
-            @click="submitFeedback(item.id)"
-            :disabled="!getDraft(item).rating"
-          >
-            保存评价
-          </button>
+          <div class="card-actions">
+            <button
+              type="button"
+              class="ui-button ui-button--soft"
+              @click="toggleItem(item)"
+            >
+              {{ openedItemKey === item.key ? '收起' : '查看详情' }}
+            </button>
+            <button
+              v-if="item.sessionId"
+              type="button"
+              class="ui-button ui-button--primary"
+              @click="continueConversation(item.sessionId)"
+            >
+              继续对话
+            </button>
+          </div>
         </div>
-      </details>
-    </div>
+
+        <div v-if="openedItemKey === item.key" class="detail-box">
+          <div v-if="item.type === 'session' && detailLoading" class="loading-text">
+            正在加载完整对话...
+          </div>
+          <div v-else-if="getItemMessages(item).length === 0" class="loading-text">
+            暂时没有可展示的消息。
+          </div>
+
+          <div
+            v-for="message in getItemMessages(item)"
+            :key="message.id"
+            class="message-row"
+            :class="message.role === 'user' ? 'message-row--user' : 'message-row--assistant'"
+          >
+            <div class="message-role">
+              {{ message.role === 'user' ? '我' : 'AI' }}
+            </div>
+            <div class="message-content">
+              <pre>{{ message.content }}</pre>
+
+              <div v-if="message.role === 'assistant' && message.action" class="message-meta">
+                <span>{{ actionLabel(message.action) }}</span>
+                <span v-if="message.confidence">可靠性 {{ Math.round(message.confidence * 100) }}%</span>
+              </div>
+
+              <details
+                v-if="message.retrieved_docs && message.retrieved_docs.length"
+                class="docs"
+              >
+                <summary>参考来源（{{ message.retrieved_docs.length }} 条）</summary>
+                <div
+                  v-for="(doc, index) in message.retrieved_docs"
+                  :key="`${message.id}-${index}`"
+                  class="doc-item"
+                >
+                  {{ index + 1 }}. {{ doc.title }}
+                  <span>{{ doc.doc_type === 'medicine' ? '药品' : '常见病' }}</span>
+                </div>
+              </details>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { apiUrl, cachedGetJson, clearPageCache } from '../api'
+import { cachedGetJson, clearPageCacheByPrefix } from '../api'
 
 const router = useRouter()
-const historyList = ref([])
+const isLoggedIn = ref(false)
 const loading = ref(false)
-const feedbackDrafts = reactive({})
+const detailLoading = ref(false)
+const sessions = ref([])
+const historyRecords = ref([])
+const openedItemKey = ref('')
+const sessionDetails = ref({})
+
+const formatTime = (value = '') => {
+  return String(value || '').replace('T', ' ').slice(0, 19)
+}
+
+const displayQuestion = (question = '') => {
+  const text = String(question || '').trim()
+  const [userText] = text.split('图片识别描述：')
+  return userText.replace(/。$/g, '').trim() || text || '未记录问题'
+}
+
+const historyItems = computed(() => {
+  const sessionIds = new Set(sessions.value.map((item) => Number(item.id)))
+  const sessionItems = sessions.value.map((session) => ({
+    type: 'session',
+    key: `session-${session.id}`,
+    id: session.id,
+    sessionId: session.id,
+    title: session.title || '未命名对话',
+    time: formatTime(session.last_message_at || session.updated_at || session.created_at),
+    sortTime: session.last_message_at || session.updated_at || session.created_at || '',
+    summary: `${session.message_count || 0} 条消息`,
+  }))
+
+  const legacyItems = historyRecords.value
+    .filter((record) => !record.session_id || !sessionIds.has(Number(record.session_id)))
+    .map((record) => ({
+      type: 'record',
+      key: `record-${record.id}`,
+      id: record.id,
+      sessionId: record.session_id || null,
+      title: displayQuestion(record.question),
+      time: formatTime(record.create_time),
+      sortTime: record.create_time || '',
+      summary: '单次问答',
+      record,
+    }))
+
+  return [...sessionItems, ...legacyItems].sort((a, b) => String(b.sortTime).localeCompare(String(a.sortTime)))
+})
 
 const authHeaders = (extra = {}) => {
   const token = localStorage.getItem('ragToken') || ''
-
   return {
     ...extra,
     Authorization: `Bearer ${token}`,
   }
 }
 
-const getDraft = (item) => {
-  if (!feedbackDrafts[item.id]) {
-    feedbackDrafts[item.id] = {
-      rating: Number(item.rating || 0),
-      feedbackText: item.feedback_text || '',
-    }
-  }
-
-  return feedbackDrafts[item.id]
+const refreshLoginState = () => {
+  isLoggedIn.value = Boolean(localStorage.getItem('ragUser') && localStorage.getItem('ragToken'))
 }
 
-const syncFeedbackDrafts = () => {
-  historyList.value.forEach((item) => {
-    feedbackDrafts[item.id] = {
-      rating: Number(item.rating || 0),
-      feedbackText: item.feedback_text || '',
-    }
+const currentUserKey = () => {
+  try {
+    const raw = localStorage.getItem('ragUser')
+    const user = raw ? JSON.parse(raw) : null
+    return user?.id || user?.username || 'guest'
+  } catch (_error) {
+    return 'guest'
+  }
+}
+
+const historyCacheKey = (name) => `history:unified:${currentUserKey()}:${name}`
+
+const sessionDetailCacheKey = (sessionId) => `history:session:${currentUserKey()}:${sessionId}`
+
+const actionLabel = (action = '') => {
+  const labels = {
+    danger_alert: '危险症状提醒',
+    ask_followup: '追问补充信息',
+    medicine_query: '药品查询',
+    rag_answer: '健康问答',
+    image_assist: '图片/视频辅助分析',
+  }
+  return labels[action] || action
+}
+
+const fetchCachedJson = async (key, url, force = false) => {
+  return cachedGetJson(key, url, {
+    force,
+    timeoutMs: 15000,
+    fetchOptions: {
+      headers: authHeaders(),
+    },
   })
 }
 
-const historyCacheKey = () => {
-  const raw = localStorage.getItem('ragUser')
-  const user = raw ? JSON.parse(raw) : null
-  return `history:list:${user?.id || user?.username || 'guest'}`
-}
-
-const displayQuestion = (question = '') => {
-  const text = String(question || '').trim()
-  const [userText] = text.split('图片识别描述：')
-  const cleaned = userText.replace(/。+$/g, '').trim()
-
-  if (cleaned) {
-    return cleaned
+const loadAllHistory = async (force = false) => {
+  refreshLoginState()
+  if (!isLoggedIn.value) {
+    sessions.value = []
+    historyRecords.value = []
+    return
   }
 
-  if (hasImageInput(text)) {
-    return '图片咨询'
-  }
-
-  return text
-}
-
-const hasImageInput = (question = '') => {
-  const text = String(question || '')
-  return text.includes('图片识别描述：') || text.includes('图片识别标签：')
-}
-
-const loadHistory = async (force = false) => {
   loading.value = true
-
   try {
-    const data = await cachedGetJson(historyCacheKey(), '/api/history/list', {
-      force,
-      fetchOptions: {
-        headers: authHeaders(),
-      },
-    })
+    if (force) {
+      clearPageCacheByPrefix(`history:unified:${currentUserKey()}:`)
+      clearPageCacheByPrefix(`history:session:${currentUserKey()}:`)
+      sessionDetails.value = {}
+    }
 
-    historyList.value = data.data || []
-    syncFeedbackDrafts()
+    const [sessionData, historyData] = await Promise.all([
+      fetchCachedJson(historyCacheKey('sessions'), '/api/conversations/sessions', force),
+      fetchCachedJson(historyCacheKey('records'), '/api/history/list', force),
+    ])
+
+    sessions.value = sessionData.data || []
+    historyRecords.value = historyData.data || []
   } catch (error) {
     alert('加载历史记录失败，请检查后端服务是否正常运行。')
     console.error(error)
@@ -200,24 +240,60 @@ const loadHistory = async (force = false) => {
   }
 }
 
-const clearHistory = async () => {
-  const confirmClear = confirm('确定要清空所有历史记录吗？')
+const loadSessionDetail = async (sessionId) => {
+  if (sessionDetails.value[sessionId]) return
 
-  if (!confirmClear) {
+  detailLoading.value = true
+  try {
+    const data = await fetchCachedJson(
+      sessionDetailCacheKey(sessionId),
+      `/api/conversations/${sessionId}`,
+    )
+    sessionDetails.value = {
+      ...sessionDetails.value,
+      [sessionId]: data.data || { messages: [] },
+    }
+  } catch (error) {
+    alert('加载完整对话失败，请稍后重试。')
+    console.error(error)
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+const recordMessages = (record) => [
+  {
+    id: `record-${record.id}-user`,
+    role: 'user',
+    content: record.question || '',
+  },
+  {
+    id: `record-${record.id}-assistant`,
+    role: 'assistant',
+    content: record.answer || '',
+    action: record.agent_meta?.action || '',
+    confidence: record.agent_meta?.confidence || null,
+    retrieved_docs: record.retrieved_docs || [],
+  },
+]
+
+const getItemMessages = (item) => {
+  if (item.type === 'record') {
+    return recordMessages(item.record)
+  }
+
+  return sessionDetails.value[item.sessionId]?.messages || []
+}
+
+const toggleItem = async (item) => {
+  if (openedItemKey.value === item.key) {
+    openedItemKey.value = ''
     return
   }
 
-  try {
-    await fetch(apiUrl('/api/history/clear'), {
-      method: 'POST',
-      headers: authHeaders(),
-    })
-
-    historyList.value = []
-    clearPageCache(historyCacheKey())
-  } catch (error) {
-    alert('清空失败，请检查后端服务是否正常运行。')
-    console.error(error)
+  openedItemKey.value = item.key
+  if (item.type === 'session') {
+    await loadSessionDetail(item.sessionId)
   }
 }
 
@@ -230,66 +306,50 @@ const continueConversation = (sessionId) => {
   })
 }
 
-const submitFeedback = async (recordId) => {
-  const draft = feedbackDrafts[recordId]
-
-  if (!draft?.rating) {
-    alert('请先选择星级')
-    return
-  }
-
-  try {
-    const response = await fetch(apiUrl(`/api/history/${recordId}/feedback`), {
-      method: 'POST',
-      headers: authHeaders({
-        'Content-Type': 'application/json',
-      }),
-      body: JSON.stringify({
-        rating: draft.rating,
-        feedback_text: draft.feedbackText,
-      }),
-    })
-
-    const data = await response.json()
-
-    if (data.success) {
-      clearPageCache(historyCacheKey())
-      await loadHistory(true)
-    } else {
-      alert(data.message || '反馈保存失败')
-    }
-  } catch (error) {
-    alert('反馈保存失败，请检查后端服务是否正常运行。')
-    console.error(error)
-  }
-}
-
 onMounted(() => {
-  loadHistory()
+  refreshLoginState()
+  if (isLoggedIn.value) {
+    loadAllHistory()
+  }
 })
 </script>
 
 <style scoped>
-.history-card {
-  margin-bottom: 16px;
-  padding: 18px;
-}
-
+.login-required,
 .empty-state {
   display: grid;
   justify-items: start;
-  gap: 10px;
+  gap: 12px;
 }
 
+.login-required strong,
 .empty-state strong {
   color: var(--text-primary);
   font-size: 18px;
   font-weight: 900;
 }
 
+.login-required span,
 .empty-state span {
   color: var(--text-muted);
   line-height: 1.7;
+}
+
+.login-actions,
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.history-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.history-card {
+  padding: 18px;
 }
 
 .card-header {
@@ -297,12 +357,9 @@ onMounted(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 12px;
-  margin-bottom: 12px;
 }
 
-.card-header > div {
+.card-header > div:first-child {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -310,172 +367,109 @@ onMounted(() => {
 
 .card-header strong {
   color: var(--text-primary);
+  font-size: 17px;
 }
 
-.card-header span {
+.card-header span,
+.loading-text {
   color: var(--text-muted);
   font-size: 14px;
 }
 
-.continue-btn {
-  flex: 0 0 auto;
-  min-height: 36px;
+.detail-box {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.message-row {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.message-role {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  color: var(--surface);
+  background: var(--medical-blue);
+  border-radius: var(--radius-pill);
   font-size: 14px;
+  font-weight: 900;
 }
 
-.input-tag {
-  width: max-content;
-  margin-bottom: 14px;
+.message-row--user .message-role {
+  background: var(--medicine-amber);
 }
 
-.warning {
-  margin-bottom: 16px;
-}
-
-.answer h4,
-.docs h4 {
-  color: var(--medical-blue);
-  margin-bottom: 10px;
-}
-
-.answer {
+.message-content {
   padding: 12px;
   background: #fbfdff;
   border: 1px solid #e4edf3;
   border-radius: var(--radius-sm);
 }
 
+.message-row--user .message-content {
+  background: #fffaf0;
+  border-color: #fde7bd;
+}
+
 pre {
-  max-height: 220px;
-  overflow: auto;
+  margin: 0;
   white-space: pre-wrap;
+  word-break: break-word;
   line-height: 1.7;
-  font-size: 15px;
   color: var(--text-secondary);
   font-family: "Microsoft YaHei", Arial, sans-serif;
+  font-size: 15px;
 }
 
-.docs,
-.feedback {
-  margin-top: 14px;
-}
-
-.docs summary,
-.feedback summary {
+.message-meta {
   display: flex;
-  align-items: center;
-  min-height: 38px;
-  padding: 0 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.message-meta span {
+  color: var(--medical-blue);
+  background: var(--info-soft);
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius-pill);
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.docs {
+  margin-top: 10px;
+}
+
+.docs summary {
   color: var(--text-secondary);
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
   cursor: pointer;
   font-weight: 900;
 }
 
-.docs summary:hover,
-.feedback summary:hover {
-  color: var(--medical-blue);
-  background: var(--info-soft);
-  border-color: var(--info-border);
-}
-
-.docs[open] summary,
-.feedback[open] summary {
-  margin-bottom: 10px;
-  color: var(--medical-blue);
-  background: var(--info-soft);
-  border-color: var(--info-border);
-}
-
 .doc-item {
+  margin-top: 8px;
+  padding: 8px 10px;
   background: #f8fafc;
   border: 1px solid var(--border);
-  padding: 10px 12px;
   border-radius: var(--radius-sm);
-  margin-top: 8px;
 }
 
 .doc-item span {
   margin-left: 8px;
-  font-size: 12px;
   color: var(--surface);
   background: var(--medical-blue);
-  padding: 3px 8px;
   border-radius: var(--radius-pill);
-}
-
-.feedback {
-  display: grid;
-  gap: 10px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-.feedback:not([open]) {
-  padding-top: 0;
-  border-top: 0;
-}
-
-.feedback-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.feedback-title strong,
-.feedback-title span {
-  display: block;
-}
-
-.feedback-title strong {
-  color: var(--text-primary);
-}
-
-.feedback-title span {
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.feedback-editor {
-  display: grid;
-  gap: 12px;
-}
-
-.star-rating {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.star-rating button {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  min-height: 38px;
-  place-items: center;
-  padding: 0;
-  color: #cbd5e1;
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 22px;
-  line-height: 1;
-}
-
-.star-rating button.active {
-  color: var(--medicine-amber);
-  background: var(--warning-soft);
-  border-color: var(--warning-border);
-}
-
-.feedback-submit {
-  justify-self: start;
-  min-height: 38px;
-  padding: 0 16px;
+  padding: 2px 7px;
+  font-size: 12px;
 }
 
 @media (max-width: 640px) {
@@ -483,9 +477,8 @@ pre {
     flex-direction: column;
   }
 
-  .feedback-title {
-    align-items: flex-start;
-    flex-direction: column;
+  .message-row {
+    grid-template-columns: 1fr;
   }
 }
 </style>

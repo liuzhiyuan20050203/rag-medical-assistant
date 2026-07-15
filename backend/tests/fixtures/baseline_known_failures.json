@@ -1,0 +1,12 @@
+{
+  "minimum_passed": 44,
+  "known_failures": [
+    "CTX-006",
+    "SAFE-NEG-001",
+    "SAFE-NEG-002",
+    "SAFE-NEG-003",
+    "SAFE-NEG-004",
+    "SAFE-NEG-005"
+  ],
+  "note": "这些是首份离线基线确认的业务缺口。修复后允许通过数增加；任何新增失败都会使回归门禁失败。"
+}

@@ -61,16 +61,41 @@ const router = createRouter({
       path: '/admin',
       name: 'admin',
       component: () => import('../views/AdminView.vue'),
+      meta: {
+        requiresAdmin: true,
+      },
     },
     {
       path: '/analytics',
       name: 'analytics',
       component: () => import('../views/AnalyticsView.vue'),
+      meta: {
+        requiresAdmin: true,
+      },
     },
   ],
 })
 
 router.beforeEach((to) => {
+  if (to.meta.requiresAdmin) {
+    const token = localStorage.getItem('ragToken')
+    let user = null
+
+    try {
+      user = JSON.parse(localStorage.getItem('ragUser') || 'null')
+    } catch {
+      user = null
+    }
+
+    if (token && user?.role === 'admin') {
+      return true
+    }
+
+    return token && user
+      ? { path: '/chat' }
+      : { path: '/login', query: { redirect: to.fullPath } }
+  }
+
   if (!to.meta.requiresAuth) {
     return true
   }

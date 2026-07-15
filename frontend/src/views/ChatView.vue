@@ -101,7 +101,10 @@
 
         <section class="safety-note">
           <strong>安全提示：</strong>
-          仅供健康参考；胸痛、呼吸困难、高热不退、意识模糊等情况请及时就医。
+          <span>
+            仅供健康参考；胸痛、呼吸困难、高热不退、意识模糊等情况请及时就医。
+            未登录咨询可能以匿名方式用于系统统计和质量改进，不与个人账号绑定，请勿输入姓名、手机号、身份证号等身份信息。
+          </span>
         </section>
 
         <ChatComposer
@@ -162,7 +165,7 @@ const consultationTips = [
   },
   {
     label: '传图片/视频',
-    hint: '药盒、症状照片、检查单都可以。',
+    hint: '药盒、说明书、症状表面照片或视频。',
   },
 ]
 
@@ -178,7 +181,7 @@ const welcomeMessage = {
   id: 'welcome',
   role: 'assistant',
   title: '你好，我可以帮你梳理症状、用药和图片/视频线索。',
-  content: '请直接说出哪里不舒服、持续多久，或者上传药盒、检查单、症状照片/视频。',
+  content: '请直接说出哪里不舒服、持续多久，或者上传药盒、药品说明书、症状表面照片或视频。',
 }
 
 const inputType = ref('text')

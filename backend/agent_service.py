@@ -246,6 +246,20 @@ VAGUE_QUESTIONS = {
     "看看这个",
     "这个严重吗",
 }
+VAGUE_HEALTH_PHRASES = ("不舒服", "难受", "不太好", "不对劲")
+SPECIFIC_HEALTH_DETAILS = (
+    "咳嗽", "咳痰", "发烧", "发热", "头痛", "头晕", "胸痛", "胸闷",
+    "呼吸", "腹痛", "肚子疼", "腹泻", "拉肚子", "呕吐", "恶心",
+    "鼻塞", "流鼻涕", "咽痛", "喉咙", "皮疹", "红疹", "瘙痒",
+    "牙痛", "便血", "黑便", "失眠", "部位",
+)
+LAB_DOCUMENT_WORDS = ("化验单", "检验报告", "检查报告", "检验单", "化验报告")
+LAB_TEST_WORDS = (
+    "血常规", "尿常规", "C反应蛋白", "CRP", "白细胞", "血红蛋白",
+    "中性粒细胞", "降钙素原", "PCT", "肝功能", "肾功能",
+)
+LAB_INTERPRET_WORDS = ("指标", "数值", "参考范围", "偏高", "偏低", "高了", "低了", "结果", "判断", "是不是")
+MULTI_MEDICINE_RELATIONS = ("一起", "同时", "合用", "搭配", "能再吃", "正在吃", "一直吃", "已经吃", "和", "与")
 
 ACTION_META = {
     "empty_input": {
@@ -322,11 +336,15 @@ def normalize_history(history):
         if isinstance(item, dict):
             role = clean_text(item.get("role", "user")) or "user"
             content = clean_text(item.get("content", ""))
+            action = clean_text(item.get("action", ""))
+            intent = clean_text(item.get("intent", ""))
             current_topic = clean_text(item.get("current_topic", ""))
             docs = item.get("docs") if isinstance(item.get("docs"), list) else []
         else:
             role = "user"
             content = clean_text(item)
+            action = ""
+            intent = ""
             current_topic = ""
             docs = []
 
@@ -343,6 +361,8 @@ def normalize_history(history):
             normalized.append({
                 "role": role,
                 "content": content,
+                "action": action,
+                "intent": intent,
                 "current_topic": current_topic,
                 "docs": normalized_docs,
             })
@@ -480,15 +500,167 @@ def find_medicine_name_by_alias(question):
     candidate = extract_medicine_candidate_from_question(question)
     search_text = candidate or question
 
+    matches = []
     for medicine in get_all_medicines():
         name = clean_text(medicine.get("name", ""))
         if medicine_name_matches_question(name, search_text):
-            return name
+            normalized_name = normalize_medicine_name(name)
+            positions = [search_text.lower().rfind(name.lower())]
+            if normalized_name:
+                positions.append(search_text.lower().rfind(normalized_name))
+            matches.append((max(positions), len(normalized_name), name))
+
+    if matches:
+        # The latest explicit medicine mention is the active topic in switch phrases.
+        return max(matches)[2]
 
     if candidate and search_medicine(candidate):
         return candidate
 
     return ""
+
+
+def find_explicit_medicine_names(question):
+    matches = []
+    for medicine in get_all_medicines():
+        name = clean_text(medicine.get("name", ""))
+        if medicine_name_matches_question(name, question):
+            normalized_name = normalize_medicine_name(name)
+            position = max(question.lower().rfind(name.lower()), question.lower().rfind(normalized_name))
+            matches.append((position, name))
+    return [name for _position, name in sorted(matches)]
+
+
+def is_multi_medicine_query(normalized):
+    question = normalized.get("question", "")
+    return len(find_explicit_medicine_names(question)) >= 2 and has_any(question, MULTI_MEDICINE_RELATIONS)
+
+
+def is_lab_report_request(normalized):
+    question = normalized.get("question", "")
+    return has_any(question, LAB_DOCUMENT_WORDS) or (
+        has_any(question, LAB_TEST_WORDS) and has_any(question, LAB_INTERPRET_WORDS)
+    )
+
+
+def is_vague_health_query(normalized):
+    question = normalized.get("question", "")
+    return has_any(question, VAGUE_HEALTH_PHRASES) and not has_any(question, SPECIFIC_HEALTH_DETAILS)
+
+
+FOLLOWUP_REQUEST_MARKERS = (
+    "请先补充",
+    "补充以下信息",
+    "主要不舒服",
+    "持续多久",
+    "危险表现",
+)
+FOLLOWUP_DETAIL_MARKERS = (
+    "熬夜",
+    "睡眠",
+    "压力",
+    "劳累",
+    "加班",
+    "休息",
+    "喝水",
+    "饮水",
+    "吃饭",
+    "饮食",
+    "饮酒",
+    "着凉",
+    "运动",
+    "服药",
+    "用药",
+    "持续",
+    "小时",
+    "天",
+    "昨天",
+    "今天",
+    "加重",
+    "缓解",
+    "好一点",
+    "没什么",
+    "没有",
+    "不发烧",
+    "不疼",
+    "不痛",
+    "别的也没",
+)
+RECENT_SYMPTOM_CONTEXT_MARKERS = (
+    "头晕",
+    "头有点晕",
+    "有点晕",
+    "晕",
+    "精神不好",
+    "精神也不好",
+    "乏力",
+    "没精神",
+    "不舒服",
+    "不适",
+)
+
+
+def history_has_recent_followup_request(history):
+    for item in reversed(history or []):
+        if item.get("role") != "assistant":
+            continue
+
+        content = item.get("content", "")
+        return (
+            item.get("action") == "ask_followup"
+            or item.get("intent") in {"followup", "capability_boundary"}
+            or has_any(content, FOLLOWUP_REQUEST_MARKERS)
+        )
+
+    return False
+
+
+def find_recent_symptom_history(history):
+    for item in reversed(history or []):
+        if item.get("role") != "user":
+            continue
+
+        content = clean_text(item.get("content", ""))
+        if not content:
+            continue
+
+        if has_any(
+            content,
+            SYMPTOM_INTENTS
+            + COMMON_DISEASE_TERMS
+            + list(SPECIFIC_HEALTH_DETAILS)
+            + list(RECENT_SYMPTOM_CONTEXT_MARKERS),
+        ):
+            return content
+
+    return ""
+
+
+def is_followup_detail_response(normalized):
+    question = normalized.get("question", "")
+    history = normalized.get("history", [])
+
+    if not question or not history_has_recent_followup_request(history):
+        return False
+
+    if not find_recent_symptom_history(history):
+        return False
+
+    if text := normalized.get("text", ""):
+        if text in VAGUE_QUESTIONS or is_vague_health_query(normalized):
+            return False
+
+    return has_any(question, FOLLOWUP_DETAIL_MARKERS)
+
+
+def build_contextual_symptom_query(normalized):
+    current = normalized.get("question", "")
+    previous = find_recent_symptom_history(normalized.get("history", []))
+
+    if previous and is_followup_detail_response(normalized):
+        return f"{previous}。{current}"
+
+    return current
 
 
 def is_standalone_common_disease(text):
@@ -547,6 +719,10 @@ def find_medicine_keyword(normalized):
     if is_standalone_common_disease(normalized.get("text", "")):
         return ""
 
+    alias_keyword = find_medicine_name_by_alias(question)
+    if alias_keyword:
+        return alias_keyword
+
     if is_common_health_query(normalized) and not has_any(question, MEDICINE_INTENTS + MEDICINE_CONTEXT_WORDS + CONTEXT_REFERENCES):
         return ""
 
@@ -555,10 +731,6 @@ def find_medicine_keyword(normalized):
 
     if has_any(question, COMMON_DISEASE_TERMS) and not has_any(question, MEDICINE_INTENTS + MEDICINE_CONTEXT_WORDS):
         return ""
-
-    alias_keyword = find_medicine_name_by_alias(question)
-    if alias_keyword:
-        return alias_keyword
 
     for medicine in get_all_medicines():
         name = clean_text(medicine.get("name", ""))
@@ -675,7 +847,10 @@ def is_information_insufficient(normalized):
     if is_medicine_query(normalized):
         return False
 
-    if text in VAGUE_QUESTIONS:
+    if is_followup_detail_response(normalized):
+        return False
+
+    if text in VAGUE_QUESTIONS or is_vague_health_query(normalized):
         return True
 
     if is_common_health_query(normalized):
@@ -785,7 +960,48 @@ def finalize_agent_response(response):
     return response
 
 
-def build_medicine_answer(keyword, medicines):
+def build_medicine_intent_lead(question, medicines):
+    question = clean_text(question)
+    names = "、".join(clean_text(item.get("name", "")) for item in medicines if item.get("name"))
+    if not question or not names:
+        return ""
+
+    if has_any(question, ["自己停", "自行停", "能停吗", "可以停吗", "停掉", "不吃了"]):
+        high_risk_long_term = any(
+            has_any(
+                " ".join([
+                    clean_text(item.get("type", "")),
+                    clean_text(item.get("usage", "")),
+                    clean_text(item.get("notice", "")),
+                ]),
+                ["抗血小板", "抗凝", "不应自行", "不能自行", "遵医嘱"],
+            )
+            for item in medicines
+        )
+        if high_risk_long_term:
+            return (
+                f"不建议自行停用{names}。这类药可能用于需要持续治疗的情况，突然停用可能影响原来的用药目的。"
+                "请联系开药医生或药师，根据实际用途和当前不适决定是否停药；在确认前不要自行改变用法。"
+            )
+        return (
+            f"是否能停用{names}取决于用药原因以及是否由医生安排长期使用，不能只凭药名判断。"
+            "如果是医生开具或长期使用，请先联系医生或药师；如果只是自行短期对症使用，也应按说明书处理。"
+        )
+
+    if has_any(question, ["几片", "多少片", "具体剂量", "用量", "加到多少", "加量"]):
+        return (
+            f"我不能直接给出{names}一次吃几片或调整到多少剂量。不同规格、用途和个人情况对应的用量可能不同，"
+            "请核对药盒与说明书，并让医生或药师结合年龄、基础疾病和当前用药确认。"
+        )
+
+    if len(medicines) >= 2 and has_any(question, MULTI_MEDICINE_RELATIONS):
+        return (
+            f"不建议在没有医生或药师确认的情况下自行合用{names}。"
+            "下面分别列出知识库中的注意事项，是否能合用还需要结合原用药目的、基础疾病和其他药物判断。"
+        )
+
+    return ""
+def build_medicine_answer(keyword, medicines, question=""):
     if not medicines:
         return (
             f"暂未在药品知识库中查询到“{keyword}”的明确记录。\n\n"
@@ -794,7 +1010,11 @@ def build_medicine_answer(keyword, medicines):
             "本系统仅提供健康信息参考，不能替代医生诊断或药师指导。"
         )
 
-    lines = [f"已在药品知识库中查询到与“{keyword}”相关的信息："]
+    lines = []
+    intent_lead = build_medicine_intent_lead(question, medicines)
+    if intent_lead:
+        lines.extend([intent_lead, ""])
+    lines.append(f"已在药品知识库中查询到与“{keyword}”相关的信息：")
     for index, item in enumerate(medicines[:3], start=1):
         lines.extend([
             "",
@@ -877,9 +1097,40 @@ def run_rag_answer(question):
 def build_user_friendly_fallback(question, retrieved_docs, has_image=False):
     docs = retrieved_docs or []
     if not docs:
+        if has_image:
+            return (
+                "目前没有根据图片线索在知识库中找到足够匹配的信息。"
+                "请补充主要不适、持续时间、是否疼痛或瘙痒；如果症状明显加重，请及时就医。"
+                "\n\n本系统仅提供健康信息参考，不能替代医生诊断或药师指导。"
+            )
+
+        resolved_history = has_any(question, ["缓解了", "已经缓解", "已缓解", "已经好了"]) and has_any(
+            question, ["现在没有不舒服", "目前没有不舒服", "现在没有不适", "目前没有不适"]
+        )
+        if resolved_history:
+            return (
+                "你描述的是过去出现过不适、已经就医并缓解，目前没有不舒服。仅凭这些信息无法判断当时的具体原因，"
+                "日常应优先遵循当时医院的检查结论和医嘱。\n\n"
+                "可以记录是否再次出现相同症状、发生时间、持续多久以及是否与活动有关，保持规律作息，"
+                "不要为了预防而自行服用止痛药或其他药物。若再次出现胸痛，尤其持续不缓解，或伴有呼吸困难、"
+                "冷汗、头晕、晕厥感等表现，应立即拨打急救电话或前往急诊就医。\n\n"
+                "本系统仅提供健康信息参考，不能替代医生诊断或药师指导。"
+            )
+
+        hypothetical_emergency = has_any(question, ["如果", "以后", "万一", "假如"]) and has_any(
+            question, ["胸痛", "呼吸困难", "喘不上气", "言语不清", "肢体无力", "意识模糊"]
+        )
+        if hypothetical_emergency:
+            return (
+                "你描述的是提前了解处理方式，并不是当前正在发生危险症状。以后如果突然出现胸痛、呼吸困难、"
+                "言语不清、单侧肢体无力或意识异常，应停止活动，不要自行开车或随意服药，立即拨打急救电话120或前往急诊就医。\n\n"
+                "本系统仅提供一般安全信息，不能判断具体病因或替代医生诊断。"
+            )
+
         return (
             "目前没有在知识库中找到足够匹配的信息。"
-            "如果是图片问题，可以补充主要不适、持续时间、是否疼痛或瘙痒；如果症状明显加重，请及时就医。"
+            "请补充具体不适、持续时间、是否正在加重，以及是否有基础疾病或正在用药。"
+            "如果症状明显加重或出现危险表现，请及时就医。"
             "\n\n本系统仅提供健康信息参考，不能替代医生诊断或药师指导。"
         )
 
@@ -1175,6 +1426,8 @@ def apply_reliability(response, normalized, answer, retrieved_docs=None, plan=No
 
 
 def rule_based_plan(normalized):
+    contextual_search_query = build_contextual_symptom_query(normalized)
+
     if asks_about_symptom_image(normalized):
         return {
             "action": "rag_answer",
@@ -1214,13 +1467,16 @@ def rule_based_plan(normalized):
         "intent": "symptom_image" if normalized["image_summary"] else "symptom_query",
         "confidence": 0.82,
         "reason": "规则识别为症状或健康问题，进入RAG问答。",
-        "search_query": normalized["question"],
+        "search_query": contextual_search_query,
         "followup_questions": [],
         "current_topic": "",
     }
 
 
 def can_skip_llm_planner(normalized):
+    if is_followup_detail_response(normalized):
+        return True
+
     if is_information_insufficient(normalized):
         return True
 
@@ -1329,7 +1585,7 @@ def build_history_agent_meta(action, used_tools, plan=None, retrieved_docs=None,
     }
 
 
-def run_agent(data):
+def run_agent(data, persist=True):
     normalized = normalize_input(data or {})
     question = normalized["question"]
     user_id = normalized.get("user_id")
@@ -1366,23 +1622,25 @@ def run_agent(data):
             retrieved_docs=[],
             warning=warning_result,
         )
-        record = add_history_record(
-            question=question,
-            answer=answer,
-            warning=warning_result,
-            retrieved_docs=[],
-            llm=None,
-            user_id=user_id,
-            agent_meta=build_history_agent_meta(
-                "danger_alert",
-                used_tools,
+        record = None
+        if persist:
+            record = add_history_record(
+                question=question,
+                answer=answer,
+                warning=warning_result,
                 retrieved_docs=[],
-                extra={
-                    "reason": "命中危险症状规则，优先提醒及时就医。",
-                    "reliability": reliability,
-                },
-            ),
-        )
+                llm=None,
+                user_id=user_id,
+                agent_meta=build_history_agent_meta(
+                    "danger_alert",
+                    used_tools,
+                    retrieved_docs=[],
+                    extra={
+                        "reason": "命中危险症状规则，优先提醒及时就医。",
+                        "reliability": reliability,
+                    },
+                ),
+            )
 
         response = {
             "success": True,
@@ -1407,6 +1665,59 @@ def run_agent(data):
             warning=warning_result,
         ))
 
+    if is_lab_report_request(normalized):
+        used_tools.append("capability_boundary_check")
+        followup_questions = [
+            "如果你有当前不适，请描述具体症状、持续时间和是否正在加重。",
+            "如需判断检验结果，请携带完整报告咨询开单医生。",
+        ]
+        answer = (
+            "当前正式能力不包括化验单或检验指标解读，也不能根据单个指标判断是否为细菌感染、"
+            "确诊疾病或推荐用药。C反应蛋白等指标需要由医生结合症状、体格检查和完整检验结果综合判断。\n\n"
+            "在医生明确判断前，请不要自行使用抗生素或其他处方药。你可以描述当前具体症状，"
+            "我可以继续帮助检查危险症状，并提供一般健康信息。"
+        )
+        plan = {
+            "action": "ask_followup",
+            "intent": "capability_boundary",
+            "confidence": 0.98,
+            "reason": "化验单解读不属于当前正式能力，返回边界说明。",
+            "search_query": "",
+            "current_topic": "",
+            "followup_questions": followup_questions,
+            "_source": "capability_boundary",
+        }
+        response = {
+            "success": True,
+            "action": "ask_followup",
+            "intent": "capability_boundary",
+            "need_followup": True,
+            "is_danger": False,
+            "question": question,
+            "answer": answer,
+            "followup_questions": followup_questions,
+            "warning": warning_result,
+            "retrieved_docs": [],
+            "history_id": None,
+            "llm": None,
+            "normalized_input": normalized,
+            "agent_trace": build_trace(
+                "ask_followup",
+                used_tools,
+                "化验单解读不属于当前正式能力，返回边界说明。",
+                intent="capability_boundary",
+                confidence=0.98,
+            ),
+        }
+        return finalize_agent_response(apply_reliability(
+            response,
+            normalized,
+            answer,
+            retrieved_docs=[],
+            plan=plan,
+            warning=warning_result,
+        ))
+
     plan = get_agent_plan(normalized)
     used_tools.append(plan.get("_source", "rule_planner"))
     planned_action = plan.get("action", "rag_answer")
@@ -1417,6 +1728,33 @@ def run_agent(data):
             f"{index}. {item}"
             for index, item in enumerate(followup_questions, start=1)
         )
+        reliability = build_reliability_report(
+            "ask_followup",
+            normalized,
+            answer,
+            retrieved_docs=[],
+            plan=plan,
+            warning=warning_result,
+        )
+        plan["confidence"] = reliability["final_score"]
+
+        record = None
+        if persist:
+            record = add_history_record(
+                question=question,
+                answer=answer,
+                warning=warning_result,
+                retrieved_docs=[],
+                llm=plan.get("_llm"),
+                user_id=user_id,
+                agent_meta=build_history_agent_meta(
+                    "ask_followup",
+                    used_tools,
+                    plan=plan,
+                    retrieved_docs=[],
+                    extra={"reliability": reliability},
+                ),
+            )
 
         response = {
             "success": True,
@@ -1428,7 +1766,7 @@ def run_agent(data):
             "followup_questions": followup_questions,
             "warning": warning_result,
             "retrieved_docs": [],
-            "history_id": None,
+            "history_id": record.get("id") if record else None,
             "llm": plan.get("_llm"),
             "normalized_input": normalized,
             "agent_trace": build_agent_trace_from_plan(
@@ -1448,20 +1786,30 @@ def run_agent(data):
         ))
 
     if planned_action == "medicine_query":
-        keyword = (
-            infer_health_product_keyword(normalized)
-            or clean_text(plan.get("search_query", ""))
-            or normalized["text"]
-            or normalized["question"]
-        )
-        medicines = search_medicine(keyword)
+        explicit_names = find_explicit_medicine_names(question)
+        if is_multi_medicine_query(normalized):
+            keyword = "、".join(explicit_names)
+            medicine_map = {}
+            for name in explicit_names:
+                for medicine in search_medicine(name):
+                    medicine_map[clean_text(medicine.get("name", ""))] = medicine
+            medicines = list(medicine_map.values())
+        else:
+            keyword = (
+                infer_health_product_keyword(normalized)
+                or clean_text(plan.get("search_query", ""))
+                or normalized["text"]
+                or normalized["question"]
+            )
+            medicines = search_medicine(keyword)
         used_tools.append("medicine_search")
-        add_search_log("medicine", keyword, [item.get("name", "") for item in medicines])
+        if persist:
+            add_search_log("medicine", keyword, [item.get("name", "") for item in medicines])
         retrieved_docs = docs_from_medicines(medicines)
         plan["confidence"] = medicine_confidence(keyword, medicines)
         if not medicines:
             plan["reason"] = f"识别到可能的药品或医疗用品“{keyword}”，但药品知识库未命中明确记录。"
-        fallback_answer = build_medicine_answer(keyword, medicines)
+        fallback_answer = build_medicine_answer(keyword, medicines, question=question)
         answer_llm = {
             "success": False,
             "provider": "",
@@ -1495,25 +1843,27 @@ def run_agent(data):
         )
         plan["confidence"] = reliability["final_score"]
 
-        record = add_history_record(
-            question=question,
-            answer=answer,
-            warning=warning_result,
-            retrieved_docs=retrieved_docs,
-            llm=answer_llm if answer_llm.get("success") else plan.get("_llm"),
-            user_id=user_id,
-            agent_meta=build_history_agent_meta(
-                action,
-                used_tools,
-                plan=plan,
+        record = None
+        if persist:
+            record = add_history_record(
+                question=question,
+                answer=answer,
+                warning=warning_result,
                 retrieved_docs=retrieved_docs,
-                extra={
-                    "keyword": keyword,
-                    "llm_used": answer_llm.get("success", False),
-                    "reliability": reliability,
-                },
-            ),
-        )
+                llm=answer_llm if answer_llm.get("success") else plan.get("_llm"),
+                user_id=user_id,
+                agent_meta=build_history_agent_meta(
+                    action,
+                    used_tools,
+                    plan=plan,
+                    retrieved_docs=retrieved_docs,
+                    extra={
+                        "keyword": keyword,
+                        "llm_used": answer_llm.get("success", False),
+                        "reliability": reliability,
+                    },
+                ),
+            )
 
         response = {
             "success": True,
@@ -1593,25 +1943,27 @@ def run_agent(data):
     )
     plan["confidence"] = reliability["final_score"]
 
-    record = add_history_record(
-        question=question,
-        answer=answer,
-        warning=warning_result,
-        retrieved_docs=retrieved_docs,
-        llm=llm_result if llm_result.get("success") else plan.get("_llm"),
-        user_id=user_id,
-        agent_meta=build_history_agent_meta(
-            action,
-            used_tools,
-            plan=plan,
+    record = None
+    if persist:
+        record = add_history_record(
+            question=question,
+            answer=answer,
+            warning=warning_result,
             retrieved_docs=retrieved_docs,
-            extra={
-                "answer_type": answer_type,
-                "llm_used": llm_result.get("success", False),
-                "reliability": reliability,
-            },
-        ),
-    )
+            llm=llm_result if llm_result.get("success") else plan.get("_llm"),
+            user_id=user_id,
+            agent_meta=build_history_agent_meta(
+                action,
+                used_tools,
+                plan=plan,
+                retrieved_docs=retrieved_docs,
+                extra={
+                    "answer_type": answer_type,
+                    "llm_used": llm_result.get("success", False),
+                    "reliability": reliability,
+                },
+            ),
+        )
 
     response = {
         "success": True,

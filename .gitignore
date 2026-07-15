@@ -26,6 +26,10 @@ frontend/dist/
 # Local Codex working files
 .codex_tmp/
 
+# Generated evaluation reports (fixed cases and assets remain tracked)
+backend/tests/reports/*.json
+backend/tests/reports/*.md
+
 # Logs
 *.log
 npm-debug.log*

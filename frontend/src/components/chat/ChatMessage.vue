@@ -23,7 +23,10 @@
       <template v-else>
         <div v-if="message.title || message.content" class="answer-content">
           <strong v-if="message.title">{{ message.title }}</strong>
-          <pre v-if="message.content">{{ message.content }}</pre>
+          <p v-if="message.role === 'user' && message.content" class="message-text user-text">
+            {{ message.content }}
+          </p>
+          <pre v-else-if="message.content" class="message-text">{{ message.content }}</pre>
         </div>
 
         <div v-if="message.role === 'assistant' && hasClinicalPanels" class="assistant-panels">
@@ -226,6 +229,25 @@ const hasClinicalPanels = computed(() => Boolean(
 .message-panel p {
   margin: 0;
   line-height: 1.8;
+}
+
+.message-text {
+  user-select: text;
+  cursor: text;
+}
+
+.user-text {
+  margin: 0;
+  color: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  line-height: 1.72;
+}
+
+.user-text::selection {
+  color: var(--medical-blue);
+  background: #ffffff;
 }
 
 pre {

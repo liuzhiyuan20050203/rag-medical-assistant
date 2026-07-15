@@ -207,6 +207,15 @@ def ensure_history_review_columns():
                     """
                 )
 
+            cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'review_retest'")
+            if not cursor.fetchone():
+                cursor.execute(
+                    """
+                    ALTER TABLE chat_history
+                    ADD COLUMN review_retest LONGTEXT NULL AFTER review_note
+                    """
+                )
+
             # Older versions defaulted every row to pending. Rows without an
             # actual review action must return to automatic classification.
             cursor.execute(
@@ -263,6 +272,7 @@ def row_to_record(row):
         "feedback_text": row.get("feedback_text", "") or "",
         "review_status": row.get("review_status", "") or "auto",
         "review_note": row.get("review_note", "") or "",
+        "review_retest": json_loads(row.get("review_retest"), None),
         "create_time": format_time(row.get("create_time")),
         "review_time": format_time(row.get("review_time"))
     }
@@ -544,21 +554,30 @@ def classify_review_issue(record):
     retrieved_docs = record.get("retrieved_docs") or []
     answer = record.get("answer", "")
     question = record.get("question", "")
-    feedback_text = record.get("feedback_text", "")
+    feedback_text = str(record.get("feedback_text") or "").strip()
     rating = int(record.get("rating") or 0)
     confidence = infer_history_confidence(record)
     action = agent_meta.get("action") or ("medicine_query" if "药品知识库" in answer else "rag_answer")
     intent = agent_meta.get("intent") or ""
     top_score = max_doc_score(retrieved_docs)
-    is_bad_feedback = record.get("is_error") or rating in {1, 2}
-    low_confidence = confidence < 0.6
-    no_docs = not retrieved_docs and not (record.get("warning") or {}).get("has_warning")
-    image_related = any(word in question for word in ["图片识别", "图像", "照片", "皮肤", "红疹", "湿疹"])
+    is_bad_feedback = bool(record.get("is_error")) or rating in {1, 2}
+    has_warning = bool((record.get("warning") or {}).get("has_warning"))
+    reviewable_actions = {"rag_answer", "medicine_query", "image_assist", "agent_error", "unknown"}
+    retrieval_actions = {"rag_answer", "medicine_query", "image_assist"}
+    low_confidence = action in reviewable_actions and confidence < 0.6
+    no_docs = action in retrieval_actions and not retrieved_docs and not has_warning
+    explicit_knowledge_gap = (
+        "暂未在药品知识库" in answer
+        or "知识库匹配度较低" in answer
+    )
+    image_related = action == "image_assist" or any(
+        word in question for word in ["图片识别", "图像", "照片"]
+    )
     medicine_related = action in {"medicine_query", "image_assist"} and (
         "药" in question or "药品知识库" in answer or "说明书" in question
     )
 
-    if medicine_related and (low_confidence or no_docs or "暂未在药品知识库" in answer):
+    if medicine_related and (no_docs or "暂未在药品知识库" in answer):
         issue_type = "药品库缺失"
         suggested_category = "medicine"
         suggested_fix = "补充或校对药品说明书字段：适用情况、注意事项、禁忌人群、不良反应。"
@@ -566,14 +585,22 @@ def classify_review_issue(record):
         issue_type = "图片识别待复核"
         suggested_category = "multimodal"
         suggested_fix = "复核图片识别结果是否提取到了关键可见信息，再决定是否补充疾病知识。"
-    elif low_confidence or no_docs:
+    elif is_bad_feedback:
+        issue_type = "用户差评"
+        suggested_category = "agent"
+        suggested_fix = "检查 Agent 意图判断、检索结果和回答措辞，必要时补知识库或调整规则。"
+    elif action == "agent_error":
+        issue_type = "Agent处理异常"
+        suggested_category = "agent"
+        suggested_fix = "检查 Agent 调度日志和异常信息，修复后使用原问题重新测试。"
+    elif medicine_related and low_confidence:
+        issue_type = "药品回答低置信"
+        suggested_category = "medicine"
+        suggested_fix = "核对药品匹配、说明书依据和回答措辞，并使用原问题重新测试。"
+    elif low_confidence or no_docs or explicit_knowledge_gap:
         issue_type = "RAG低命中"
         suggested_category = "disease"
         suggested_fix = "补充疾病/症状知识：常见表现、家庭护理、用药注意和需要就医的危险信号。"
-    elif is_bad_feedback:
-        issue_type = "用户差评/已标错"
-        suggested_category = "agent"
-        suggested_fix = "检查 Agent 意图判断、检索结果和回答措辞，必要时补知识库或调整规则。"
     else:
         issue_type = "待人工复核"
         suggested_category = "agent"
@@ -584,8 +611,8 @@ def classify_review_issue(record):
         or low_confidence
         or no_docs
         or bool(feedback_text)
-        or "暂未在药品知识库" in answer
-        or "知识库匹配度较低" in answer
+        or action == "agent_error"
+        or explicit_knowledge_gap
     )
     stored_review_status = record.get("review_status") or "auto"
     if stored_review_status == "auto":
@@ -615,6 +642,7 @@ def classify_review_issue(record):
         "needs_review": needs_review,
         "review_status": review_status,
         "review_note": record.get("review_note", ""),
+        "review_retest": record.get("review_retest"),
         "review_time": record.get("review_time", ""),
         "agent_meta": agent_meta,
     }
@@ -671,7 +699,8 @@ def update_history_record(record_id: int, fields: dict, user_id=None):
         "rating",
         "feedback_text",
         "review_status",
-        "review_note"
+        "review_note",
+        "review_retest"
     }
 
     update_fields = {}
@@ -731,14 +760,32 @@ def set_review_ticket_status(record_id: int, status: str, note: str = ""):
     status: pending / processed / ignored
     """
     status = (status or "").strip()
+    note = (note or "").strip()
     if status not in {"pending", "processed", "ignored"}:
+        return None
+    if status in {"processed", "ignored"} and not note:
         return None
 
     return update_history_record(
         record_id,
         {
             "review_status": status,
-            "review_note": (note or "").strip(),
+            "review_note": note,
+        }
+    )
+
+
+def set_review_retest_result(record_id: int, retest: dict):
+    """
+    保存审核工单的最新复测摘要，不覆盖原始问答。
+    """
+    if not isinstance(retest, dict):
+        return None
+
+    return update_history_record(
+        record_id,
+        {
+            "review_retest": json_dumps(retest),
         }
     )
 

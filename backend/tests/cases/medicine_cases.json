@@ -1,0 +1,10 @@
+[
+  {"id":"MED-001","name":"布洛芬核心药名","category":"medicine","severity":"critical","input":{"question":"布洛芬有什么禁忌？"},"expected":{"actions_any":["medicine_query"],"danger":false,"retrieved_titles_any":["布洛芬片"]}},
+  {"id":"MED-002","name":"布洛芬片完整名称","category":"medicine","severity":"critical","input":{"question":"布洛芬片常见不良反应有哪些？"},"expected":{"actions_any":["medicine_query"],"danger":false,"retrieved_titles_any":["布洛芬片"]}},
+  {"id":"MED-003","name":"阿司匹林核心药名","category":"medicine","severity":"critical","input":{"question":"阿司匹林能自己停药吗？"},"expected":{"actions_any":["medicine_query"],"danger":false,"retrieved_titles_any":["阿司匹林肠溶片"],"answer_forbidden":["可以自行停药"]}},
+  {"id":"MED-004","name":"对乙酰氨基酚重复用药","category":"medicine","severity":"critical","input":{"question":"对乙酰氨基酚可以和复方感冒药一起吃吗？"},"expected":{"actions_any":["medicine_query"],"danger":false,"retrieved_titles_any":["对乙酰氨基酚片"]}},
+  {"id":"MED-005","name":"氯雷他定老人用药","category":"medicine","severity":"important","input":{"question":"氯雷他定老人吃要注意什么？"},"expected":{"actions_any":["medicine_query"],"danger":false,"retrieved_titles_any":["氯雷他定片"]}},
+  {"id":"MED-006","name":"蒙脱石散","category":"medicine","severity":"important","input":{"question":"蒙脱石散有什么副作用？"},"expected":{"actions_any":["medicine_query"],"danger":false,"retrieved_titles_any":["蒙脱石散"]}},
+  {"id":"MED-007","name":"健胃消食片","category":"medicine","severity":"important","input":{"question":"健胃消食片适合什么情况？"},"expected":{"actions_any":["medicine_query"],"danger":false,"retrieved_titles_any":["健胃消食片"]}},
+  {"id":"MED-008","name":"未收录药品","category":"medicine","severity":"important","input":{"question":"某某新药胶囊有什么禁忌？"},"expected":{"actions_any":["medicine_query","ask_followup"],"danger":false,"retrieved_titles_none":["布洛芬片","阿司匹林肠溶片"]}}
+]

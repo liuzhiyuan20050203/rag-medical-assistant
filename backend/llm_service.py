@@ -67,6 +67,14 @@ def normalize_chat_url(base_url):
     return base_url.rstrip("/") + "/chat/completions"
 
 
+def get_llm_timeout_seconds():
+    try:
+        timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "30"))
+    except ValueError:
+        timeout = 30.0
+    return max(5.0, min(timeout, 120.0))
+
+
 def call_chat_completion(messages, temperature=0.1, max_tokens=1100):
     config = get_llm_config()
 
@@ -105,7 +113,7 @@ def call_chat_completion(messages, temperature=0.1, max_tokens=1100):
             normalize_chat_url(config["base_url"]),
             headers=headers,
             json=payload,
-            timeout=60
+            timeout=get_llm_timeout_seconds()
         )
 
         if response.status_code != 200:

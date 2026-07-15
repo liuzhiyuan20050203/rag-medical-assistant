@@ -1,0 +1,10 @@
+[
+  {"id":"SYM-001","name":"咳嗽白痰","category":"symptom","severity":"important","input":{"question":"我咳嗽三天了，有少量白痰，没有发烧"},"expected":{"actions_any":["rag_answer"],"danger":false,"retrieved_titles_any":["普通感冒","急性支气管炎"]}},
+  {"id":"SYM-002","name":"鼻炎样表现","category":"symptom","severity":"important","input":{"question":"这两天一直打喷嚏，流清鼻涕，鼻子很痒"},"expected":{"actions_any":["rag_answer"],"danger":false,"retrieved_titles_any":["过敏性鼻炎"]}},
+  {"id":"SYM-003","name":"腹泻腹痛","category":"symptom","severity":"important","input":{"question":"昨晚开始拉肚子，肚子一阵阵疼，还有点恶心"},"expected":{"actions_any":["rag_answer"],"danger":false,"retrieved_titles_any":["急性胃肠炎"]}},
+  {"id":"SYM-004","name":"反酸烧心","category":"symptom","severity":"important","input":{"question":"吃完饭以后反酸烧心，躺下更明显，已经一周了"},"expected":{"actions_any":["rag_answer"],"danger":false,"retrieved_titles_any":["胃食管反流"]}},
+  {"id":"SYM-005","name":"皮肤瘙痒红疹","category":"symptom","severity":"important","input":{"question":"胳膊上起了红疹而且很痒，抓了以后有点脱皮"},"expected":{"actions_any":["rag_answer"],"danger":false,"retrieved_titles_any":["湿疹"]}},
+  {"id":"SYM-006","name":"口腔溃疡","category":"symptom","severity":"important","input":{"question":"嘴里有一个溃疡，吃东西疼，已经四天了"},"expected":{"actions_any":["rag_answer"],"danger":false,"retrieved_titles_any":["口腔溃疡"]}},
+  {"id":"SYM-007","name":"偏头痛表现","category":"symptom","severity":"important","input":{"question":"左边头一跳一跳地痛，还恶心怕光，休息后会好些"},"expected":{"actions_any":["rag_answer"],"danger":false,"retrieved_titles_any":["偏头痛"]}},
+  {"id":"SYM-008","name":"轻微感冒表现","category":"symptom","severity":"important","input":{"question":"鼻塞流鼻涕还有点喉咙痛，体温正常"},"expected":{"actions_any":["rag_answer"],"danger":false,"retrieved_titles_any":["普通感冒"]}}
+]

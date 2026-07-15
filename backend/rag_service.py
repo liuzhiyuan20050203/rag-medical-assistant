@@ -23,6 +23,7 @@ fallback_reason = ""
 # 如果后面发现检索不到内容，可以把 0.03 调低到 0.02
 MIN_SCORE = 0.03
 SEMANTIC_MIN_SCORE = 0.25
+KEYWORD_RESULT_MIN_SCORE = 0.10
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 TITLE_MATCH_BOOST = 0.45
 KEYWORD_MATCH_BOOST = 0.08
@@ -55,6 +56,7 @@ SYNONYMS = {
 
     # 咳嗽呼吸相关
     "干咳": ["咳嗽", "咽痒", "急性支气管炎"],
+    "白痰": ["咳痰", "急性支气管炎"],
     "有痰": ["咳痰", "痰液黏稠", "急性支气管炎"],
     "痰多": ["咳痰", "痰液黏稠", "祛痰"],
     "胸闷": ["胸部不适", "呼吸困难", "急性支气管炎"],
@@ -82,6 +84,7 @@ SYNONYMS = {
 
     # 皮肤过敏相关
     "皮肤痒": ["皮肤瘙痒", "瘙痒", "过敏", "湿疹", "荨麻疹"],
+    "皮肤很痒": ["皮肤瘙痒", "瘙痒", "过敏", "湿疹", "荨麻疹"],
     "身上痒": ["皮肤瘙痒", "湿疹", "荨麻疹"],
     "起红疹": ["红疹", "皮疹", "皮肤过敏", "湿疹"],
     "起疹子": ["红疹", "皮疹", "皮肤过敏", "湿疹"],
@@ -116,6 +119,7 @@ SYNONYMS = {
     "耳朵疼": ["耳痛", "耳闷", "听力下降"],
     "嘴里烂了": ["口腔溃疡", "口腔疼痛"],
     "口腔疼": ["口腔溃疡", "口腔疼痛"],
+    "溃疡": ["口腔溃疡", "口腔疼痛", "进食疼痛"],
 
     # 睡眠和全身不适
     "睡不着": ["失眠", "入睡困难"],
@@ -414,6 +418,44 @@ def keyword_match_boost(query_text: str, keywords):
     return boost, unique_matched
 
 
+def expanded_keyword_match_boost(query_text: str, keywords, direct_matches=None):
+    expanded_terms = {
+        normalize_match_text(term)
+        for term in expand_question_terms(query_text)
+        if normalize_match_text(term)
+    }
+    direct_matches = {normalize_match_text(item) for item in (direct_matches or [])}
+    matched = []
+
+    for keyword in keywords or []:
+        normalized = normalize_match_text(keyword)
+        if len(normalized) >= 2 and normalized in expanded_terms and normalized not in direct_matches:
+            matched.append(keyword)
+
+    unique_matched = []
+    for item in matched:
+        if item not in unique_matched:
+            unique_matched.append(item)
+
+    boost = min(len(unique_matched) * KEYWORD_MATCH_BOOST, MAX_KEYWORD_BOOST)
+    return boost, unique_matched
+
+
+def has_population_mismatch(question: str, doc: dict):
+    scope_text = normalize_match_text(" ".join([
+        doc.get("title", ""),
+        (doc.get("raw") or {}).get("name", ""),
+        (doc.get("raw") or {}).get("category", ""),
+    ]))
+    question_text = normalize_match_text(question)
+    child_markers = ("儿童", "小儿", "婴儿", "婴幼儿", "幼儿")
+    child_query_markers = child_markers + ("孩子", "小孩", "宝宝", "儿子", "女儿")
+
+    return any(marker in scope_text for marker in child_markers) and not any(
+        marker in question_text for marker in child_query_markers
+    )
+
+
 def add_exact_match_candidates(question: str, candidates):
     seen_titles = {item["doc"].get("title", "") for item in candidates}
 
@@ -441,14 +483,21 @@ def hybrid_rank_results(question: str, candidates):
         base_score = float(candidate["score"])
         title_boost, title_matches = title_match_boost(question, doc.get("title", ""))
         keyword_boost, keyword_matches = keyword_match_boost(question, doc.get("keywords", []))
-        hybrid_score = min(base_score + title_boost + keyword_boost, 1.0)
+        synonym_boost, synonym_matches = expanded_keyword_match_boost(
+            question,
+            doc.get("keywords", []),
+            direct_matches=keyword_matches,
+        )
+        hybrid_score = min(base_score + title_boost + keyword_boost + synonym_boost, 1.0)
 
         ranked.append({
             **candidate,
             "hybrid_score": hybrid_score,
-            "boost": title_boost + keyword_boost,
+            "boost": title_boost + keyword_boost + synonym_boost,
             "match_reason": title_matches + [
                 f"关键词命中：{item}" for item in keyword_matches
+            ] + [
+                f"同义词命中：{item}" for item in synonym_matches
             ],
         })
 
@@ -604,10 +653,19 @@ def search_knowledge(question: str, top_k: int = 3, score_threshold: float = MIN
 
     results = []
     for candidate in ranked_candidates:
-        if candidate["hybrid_score"] < effective_score_threshold:
+        result_min_score = (
+            SEMANTIC_MIN_SCORE
+            if active_index_mode == "semantic"
+            else KEYWORD_RESULT_MIN_SCORE
+        )
+        has_explicit_match = bool(candidate.get("match_reason"))
+        if candidate["hybrid_score"] < result_min_score and not has_explicit_match:
             continue
 
         doc = candidate["doc"]
+
+        if has_population_mismatch(question, doc):
+            continue
 
         results.append({
             "title": doc["title"],

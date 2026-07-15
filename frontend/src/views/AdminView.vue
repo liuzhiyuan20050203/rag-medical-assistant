@@ -13,13 +13,13 @@
         <p class="eyebrow">ADMIN CONSOLE</p>
         <h2>管理员后台</h2>
         <p>
-          管理疾病知识文档、药品说明书和用户问答记录，并在知识更新后重建 RAG 向量索引。
+          这里只处理复核样本、知识库维护、用户权限和系统更新；运行统计统一在数据分析页面查看。
         </p>
       </div>
 
       <div class="admin-actions">
         <button type="button" @click="loadAdminData(true)" :disabled="loading">
-          {{ loading ? '刷新中...' : '刷新数据' }}
+          {{ loading ? '刷新中...' : '刷新当前分区' }}
         </button>
       </div>
     </section>
@@ -30,7 +30,7 @@
         :key="section.value"
         type="button"
         :class="{ active: activeAdminSection === section.value }"
-        @click="activeAdminSection = section.value"
+        @click="selectAdminSection(section.value)"
       >
         {{ section.label }}
       </button>
@@ -63,10 +63,10 @@
       <div class="overview-insights">
         <article>
           <div>
-            <span>待处理工单</span>
+            <span>待复核样本</span>
             <strong>{{ issueStatusCount('pending') }}</strong>
           </div>
-          <p>需要管理员复核、补知识库或判断是否无效。</p>
+          <p>需要管理员复核、补知识库或判断是否忽略。</p>
         </article>
         <article>
           <div>
@@ -295,9 +295,9 @@
       <div class="section-title">
         <div>
           <p class="eyebrow">REVIEW WORKFLOW</p>
-          <h3>问答审核工单</h3>
+          <h3>回答复核样本</h3>
           <span class="section-help">
-            将低置信、药品库缺失、图片复核和已标错样本统一成工单，管理员可生成知识草稿、标记已处理或标记无效。
+            有问题特征的回答默认进入待处理；小标签说明原因，重新测试后再标记已处理或忽略。
           </span>
         </div>
 
@@ -317,7 +317,7 @@
       <div class="review-summary">
         <article>
           <strong>{{ issueStatusCount('pending') }}</strong>
-          <span>待处理</span>
+          <span>待处理样本</span>
         </article>
         <article>
           <strong>{{ issueStatusCount('processed') }}</strong>
@@ -328,76 +328,126 @@
           <span>已忽略</span>
         </article>
         <article>
-          <strong>{{ lowConfidenceIssues.length }}</strong>
-          <span>低置信</span>
+          <strong>{{ issueList.length }}</strong>
+          <span>样本总数</span>
         </article>
       </div>
 
       <div class="review-toolbar">
         <span>当前筛选：{{ reviewFilterLabel(activeReviewFilter) }}，共 {{ filteredIssues.length }} 条</span>
         <button type="button" class="ghost-btn" @click="loadReviewIssues">
-          刷新工单
+          刷新样本
         </button>
       </div>
 
       <div v-if="filteredIssues.length === 0" class="empty-state">
-        当前筛选下暂无审核工单。
+        当前筛选下暂无复核样本。
       </div>
 
       <div v-else class="issue-list">
         <article v-for="item in pagedIssues" :key="item.record_id" class="issue-card">
           <div class="issue-head">
-            <div>
-              <span :class="['issue-tag', issueTagClass(item.issue_type)]">
-                {{ item.issue_type }}
-              </span>
-              <span :class="['ticket-status', item.review_status || 'pending']">
-                {{ reviewStatusLabel(item.review_status) }}
-              </span>
+            <div class="issue-title-block">
+              <div class="issue-badges">
+                <span :class="['issue-tag', issueTagClass(item.issue_type)]">
+                  {{ item.issue_type }}
+                </span>
+                <span :class="['ticket-status', item.review_status || 'pending']">
+                  {{ reviewStatusLabel(item.review_status) }}
+                </span>
+              </div>
               <strong>{{ item.keyword || '待补充条目' }}</strong>
             </div>
             <small>{{ item.create_time }}</small>
           </div>
 
-          <p class="issue-question">{{ item.question }}</p>
+          <section class="issue-section">
+            <div class="issue-section-title">用户问题</div>
+            <p class="issue-question">{{ item.question }}</p>
 
-          <div class="issue-meta">
-            <span>可靠性：{{ Math.round((item.confidence || 0) * 100) }}%</span>
-            <span>检索数：{{ item.retrieved_count }}</span>
-            <span>最高分：{{ item.top_score }}</span>
-            <span v-if="item.action">动作：{{ labelAction(item.action) }}</span>
+            <details class="issue-answer">
+              <summary>查看原回答</summary>
+              <pre>{{ item.answer }}</pre>
+            </details>
+          </section>
+
+          <section class="issue-section">
+            <div class="issue-section-title">问题特征</div>
+            <div class="issue-meta">
+              <span>可靠性：{{ Math.round((item.confidence || 0) * 100) }}%</span>
+              <span>检索数：{{ item.retrieved_count }}</span>
+              <span>最高分：{{ item.top_score }}</span>
+              <span v-if="item.action">动作：{{ labelAction(item.action) }}</span>
+            </div>
+
+            <p class="issue-fix">{{ item.suggested_fix }}</p>
+            <div class="issue-notes">
+              <p v-if="item.feedback_text" class="feedback-note">用户反馈：{{ item.feedback_text }}</p>
+              <p v-if="item.error_reason" class="feedback-note">管理员标注：{{ item.error_reason }}</p>
+              <p v-if="item.review_note" class="feedback-note">处理备注：{{ item.review_note }}</p>
+            </div>
+          </section>
+
+          <div v-if="currentReviewRetest(item)" class="retest-result">
+            <div class="mini-heading">
+              <strong>当前系统测试结果</strong>
+              <span>{{ labelAction(currentReviewRetest(item).current.action) }}</span>
+            </div>
+            <div class="retest-metrics">
+              <span>
+                可靠性 {{ formatPercent(currentReviewRetest(item).previous.confidence) }}
+                → {{ formatPercent(currentReviewRetest(item).current.confidence) }}
+              </span>
+              <span>
+                最高分 {{ currentReviewRetest(item).previous.top_score }}
+                → {{ currentReviewRetest(item).current.top_score }}
+              </span>
+              <span>召回 {{ currentReviewRetest(item).current.retrieved_count }} 条</span>
+              <span>{{ labelRetestContext(currentReviewRetest(item).context) }}</span>
+              <span v-if="currentReviewRetest(item).retested_at">复测时间 {{ currentReviewRetest(item).retested_at }}</span>
+            </div>
+            <p v-if="currentReviewRetest(item).current.retrieved_titles?.length">
+              当前召回：{{ currentReviewRetest(item).current.retrieved_titles.join('、') }}
+            </p>
+            <pre>{{ currentReviewRetest(item).current.answer }}</pre>
           </div>
 
-          <p class="issue-fix">{{ item.suggested_fix }}</p>
-          <p v-if="item.feedback_text" class="feedback-note">用户反馈：{{ item.feedback_text }}</p>
-          <p v-if="item.error_reason" class="feedback-note">管理员标注：{{ item.error_reason }}</p>
-          <p v-if="item.review_note" class="feedback-note">工单备注：{{ item.review_note }}</p>
+          <section class="issue-section issue-process">
+            <div class="issue-section-title">处理操作</div>
+            <textarea
+              v-model="reviewNotes[item.record_id]"
+              class="review-note-input"
+              rows="2"
+              placeholder="填写处理说明，例如：已补充知识并用原问题复测通过"
+            ></textarea>
 
-          <div class="issue-actions">
-            <button
-              type="button"
-              class="draft-btn"
-              @click="fillKnowledgeDraft(item, item.suggested_category === 'medicine' ? 'medicine' : 'disease')"
-            >
-              {{ item.suggested_category === 'medicine' ? '生成药品库草稿' : '生成疾病库草稿' }}
-            </button>
-            <button
-              type="button"
-              class="ghost-btn"
-              :disabled="isReviewUpdating(item) || item.review_status === 'processed'"
-              @click="updateReviewTicket(item, 'processed')"
-            >
-              {{ isReviewUpdating(item, 'processed') ? '处理中...' : '标记已处理' }}
-            </button>
-            <button
-              type="button"
-              class="invalid-btn"
-              :disabled="isReviewUpdating(item) || item.review_status === 'ignored'"
-              @click="updateReviewTicket(item, 'ignored')"
-            >
-              {{ isReviewUpdating(item, 'ignored') ? '处理中...' : '标记无效' }}
-            </button>
-          </div>
+            <div class="issue-actions">
+              <button
+                type="button"
+                class="retest-btn"
+                :disabled="isReviewRetesting(item) || isReviewUpdating(item)"
+                @click="retestReviewTicket(item)"
+              >
+                {{ isReviewRetesting(item) ? '测试中...' : '重新测试' }}
+              </button>
+              <button
+                type="button"
+                class="ghost-btn"
+                :disabled="isReviewUpdating(item) || item.review_status === 'processed' || !String(reviewNotes[item.record_id] || '').trim()"
+                @click="updateReviewTicket(item, 'processed')"
+              >
+                {{ isReviewUpdating(item, 'processed') ? '处理中...' : '标记已处理' }}
+              </button>
+              <button
+                type="button"
+                class="invalid-btn"
+                :disabled="isReviewUpdating(item) || item.review_status === 'ignored' || !String(reviewNotes[item.record_id] || '').trim()"
+                @click="updateReviewTicket(item, 'ignored')"
+              >
+                {{ isReviewUpdating(item, 'ignored') ? '处理中...' : '忽略样本' }}
+              </button>
+            </div>
+          </section>
         </article>
       </div>
 
@@ -545,7 +595,7 @@
       </section>
     </div>
 
-    <section v-if="activeAdminSection === 'knowledge'" ref="uploadSectionRef" class="knowledge-manager">
+    <section v-if="activeAdminSection === 'knowledge'" class="knowledge-manager">
       <div class="section-title">
         <div>
           <p class="eyebrow">KNOWLEDGE MANAGER</p>
@@ -669,67 +719,6 @@
       </div>
     </section>
 
-    <section v-if="activeAdminSection === 'review'" class="admin-grid">
-      <article class="history-panel">
-        <div class="section-title">
-          <div>
-            <p class="eyebrow">ANSWER REVIEW</p>
-            <h3>用户问答记录</h3>
-          </div>
-        </div>
-
-        <div v-if="historyList.length === 0" class="empty-state">
-          暂无问答记录。
-        </div>
-
-        <div v-else class="review-list">
-          <article v-for="item in pagedHistory" :key="item.id" class="review-card">
-            <div class="review-header">
-              <strong>{{ item.question }}</strong>
-              <span>{{ item.create_time }}</span>
-            </div>
-
-            <pre>{{ item.answer }}</pre>
-
-            <div class="review-meta">
-              <span v-if="item.warning?.has_warning" class="danger-tag">危险提醒</span>
-              <span v-if="item.is_error" class="error-tag">已标记错误</span>
-            </div>
-
-            <p v-if="item.feedback_text" class="feedback-note">
-              详细评价：{{ item.feedback_text }}
-            </p>
-
-            <div class="mark-row">
-              <input
-                v-model="errorReasons[item.id]"
-                placeholder="错误原因，例如：知识库不足、回答不准确"
-              />
-              <button type="button" @click="markError(item.id)">
-                标记错误回答
-              </button>
-            </div>
-          </article>
-        </div>
-
-        <div v-if="historyList.length" class="pagination-bar">
-          <span>{{ pageRangeLabel(historyList.length, 'history') }}</span>
-          <label>
-            每页
-            <select v-model.number="pagination.history.pageSize" @change="resetPage('history')">
-              <option v-for="size in pageSizeOptions" :key="`history-${size}`" :value="size">{{ size }}</option>
-            </select>
-          </label>
-          <button type="button" class="ghost-btn" :disabled="currentPage(historyList.length, 'history') <= 1" @click="changePage('history', historyList.length, -1)">
-            上一页
-          </button>
-          <button type="button" class="ghost-btn" :disabled="currentPage(historyList.length, 'history') >= pageCount(historyList.length, 'history')" @click="changePage('history', historyList.length, 1)">
-            下一页
-          </button>
-        </div>
-      </article>
-    </section>
-
     <section v-if="activeAdminSection === 'system'" class="system-panel">
       <div class="section-title">
         <div>
@@ -743,10 +732,10 @@
 
       <div class="system-grid">
         <article>
-          <strong>刷新后台数据</strong>
-          <p>重新获取用户、知识库、审核工单、会话和 Agent 日志。</p>
-          <button type="button" @click="loadAdminData(true)" :disabled="loading">
-            {{ loading ? '刷新中...' : '刷新数据' }}
+          <strong>清除页面缓存</strong>
+          <p>知识库或审核状态更新后，可清除管理页面缓存；进入具体分区时会重新加载对应数据。</p>
+          <button type="button" @click="refreshAdminCaches">
+            清除缓存
           </button>
         </article>
 
@@ -764,7 +753,8 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   apiUrl,
   clearPageCache,
@@ -784,12 +774,14 @@ const agentRuns = ref([])
 const users = ref([])
 const userSaving = ref(false)
 const userSearch = ref('')
-const activeAdminSection = ref('overview')
+const activeAdminSection = ref('review')
 const activeKnowledge = ref('disease')
 const activeReviewFilter = ref('pending')
-const uploadSectionRef = ref(null)
-const errorReasons = reactive({})
 const reviewUpdating = reactive({})
+const reviewNotes = reactive({})
+const reviewRetesting = reactive({})
+const reviewRetestResults = reactive({})
+const route = useRoute()
 const pageSizeOptions = [5, 10, 20, 50]
 const pagination = reactive({
   agent: { page: 1, pageSize: 10 },
@@ -812,11 +804,9 @@ const userModal = reactive({
 })
 
 const adminSections = [
-  { label: '总览', value: 'overview' },
-  { label: 'Agent 监控', value: 'agent' },
-  { label: '知识库管理', value: 'knowledge' },
+  { label: '回答复核', value: 'review' },
+  { label: '知识库维护', value: 'knowledge' },
   { label: '用户管理', value: 'users' },
-  { label: '问答审核', value: 'review' },
   { label: '系统维护', value: 'system' },
 ]
 
@@ -824,10 +814,6 @@ const reviewFilters = [
   { label: '待处理', value: 'pending' },
   { label: '已处理', value: 'processed' },
   { label: '已忽略', value: 'ignored' },
-  { label: '低置信', value: 'low_confidence' },
-  { label: '已标错', value: 'bad' },
-  { label: '图片复核', value: 'image' },
-  { label: '药品库缺失', value: 'medicine' },
   { label: '全部', value: 'all' },
 ]
 
@@ -1022,6 +1008,11 @@ const clearAdminDataCache = () => {
   clearPageCache('analytics:summary')
 }
 
+const refreshAdminCaches = () => {
+  clearAdminDataCache()
+  statusMessage.value = '管理页面缓存已清除，进入具体分区时会重新加载。'
+}
+
 const visibleKnowledge = computed(() => {
   if (activeKnowledge.value === 'disease') {
     return knowledge.value.diseases
@@ -1083,22 +1074,6 @@ const filteredIssues = computed(() => {
     return list.filter((item) => normalizedReviewStatus(item) === activeReviewFilter.value)
   }
 
-  if (activeReviewFilter.value === 'medicine') {
-    return list.filter((item) => item.issue_type === '药品库缺失')
-  }
-
-  if (activeReviewFilter.value === 'low_confidence') {
-    return list.filter((item) => Number(item.confidence || 0) < 0.6)
-  }
-
-  if (activeReviewFilter.value === 'image') {
-    return list.filter((item) => item.issue_type === '图片识别待复核')
-  }
-
-  if (activeReviewFilter.value === 'bad') {
-    return list.filter((item) => item.is_error)
-  }
-
   return list
 })
 
@@ -1106,12 +1081,29 @@ const pagedIssues = computed(() => pageItems(filteredIssues.value, 'issues'))
 
 const issueStatusCount = (status) => issueList.value.filter((item) => normalizedReviewStatus(item) === status).length
 
-const lowConfidenceIssues = computed(() => issueList.value.filter((item) => Number(item.confidence || 0) < 0.6))
-
 const reviewStatusLabel = (status) => reviewStatusLabels[status || 'pending'] || '待处理'
 
 const reviewFilterLabel = (value) => {
   return reviewFilters.find((item) => item.value === value)?.label || '全部'
+}
+
+const labelRetestContext = (context = {}) => {
+  const count = Number(context.used_count || 0)
+  if (context.source === 'session' && count > 0) {
+    return `带上下文 ${count} 条`
+  }
+  if (context.source === 'fallback_topic' && count > 0) {
+    return '仅继承药品主题'
+  }
+  return '未找到上下文，单句复测'
+}
+
+const currentReviewRetest = (item) => {
+  const retest = reviewRetestResults[item.record_id] || item.review_retest
+  if (!retest || typeof retest !== 'object') return null
+  if (!retest.current || typeof retest.current !== 'object') return null
+  if (!retest.previous || typeof retest.previous !== 'object') return null
+  return retest
 }
 
 const setReviewFilter = (value) => {
@@ -1123,6 +1115,8 @@ const isReviewUpdating = (item, status = '') => {
   const current = reviewUpdating[item.record_id]
   return status ? current === status : Boolean(current)
 }
+
+const isReviewRetesting = (item) => Boolean(reviewRetesting[item.record_id])
 
 const roleLabel = (role) => (role === 'admin' ? '管理员' : '普通用户')
 
@@ -1198,21 +1192,15 @@ const loadAdminData = async (force = false) => {
   statusMessage.value = ''
 
   try {
-    const [knowledgeData, historyData, usersData, issuesData, sessionsData, runsData] = await Promise.all([
-      cachedAdminGet('knowledge', '/api/admin/knowledge', force),
-      cachedAdminGet('history', '/api/admin/history', force),
-      cachedAdminGet('users', '/api/admin/users', force),
-      cachedAdminGet('issues', '/api/admin/review/issues', force),
-      cachedAdminGet('sessions', '/api/admin/conversations/sessions', force),
-      cachedAdminGet('runs', '/api/admin/agent/runs', force),
-    ])
-
-    knowledge.value = knowledgeData
-    historyList.value = historyData.data || []
-    users.value = usersData.data || []
-    issueList.value = issuesData.data || []
-    conversationSessions.value = sessionsData.data || []
-    agentRuns.value = runsData.data || []
+    if (activeAdminSection.value === 'review') {
+      const data = await cachedAdminGet('issues', '/api/admin/review/issues', force)
+      issueList.value = data.data || []
+    } else if (activeAdminSection.value === 'knowledge') {
+      knowledge.value = await cachedAdminGet('knowledge', '/api/admin/knowledge', force)
+    } else if (activeAdminSection.value === 'users') {
+      const data = await cachedAdminGet('users', '/api/admin/users', force)
+      users.value = data.data || []
+    }
   } catch (error) {
     if (!error.expectedAuthFailure) {
       console.error(error)
@@ -1223,6 +1211,11 @@ const loadAdminData = async (force = false) => {
   } finally {
     loading.value = false
   }
+}
+
+const selectAdminSection = async (section) => {
+  activeAdminSection.value = section
+  await loadAdminData()
 }
 
 const resetUserModalForm = () => {
@@ -1379,17 +1372,8 @@ const handleFile = (event, kind) => {
 const issueTagClass = (type) => {
   if (type === '药品库缺失') return 'medicine'
   if (type === '图片识别待复核') return 'image'
-  if (String(type || '').includes('标错')) return 'bad'
   if (type === 'RAG低命中') return 'rag'
   return 'neutral'
-}
-
-const scrollToUploadSection = async () => {
-  await nextTick()
-  uploadSectionRef.value?.scrollIntoView({
-    behavior: 'smooth',
-    block: 'start',
-  })
 }
 
 const switchKnowledgeKind = (kind) => {
@@ -1402,32 +1386,69 @@ const switchKnowledgeKind = (kind) => {
 }
 
 const loadReviewIssues = async () => {
-  statusMessage.value = '正在刷新审核工单...'
+  statusMessage.value = '正在刷新复核样本...'
 
   try {
     const data = await cachedAdminGet('issues', '/api/admin/review/issues', true)
     issueList.value = data.data || []
-    statusMessage.value = '审核工单已刷新。'
+    statusMessage.value = '复核样本已刷新。'
   } catch (error) {
     console.error(error)
     if (!statusMessage.value) {
-      statusMessage.value = '审核工单刷新失败。'
+      statusMessage.value = '复核样本刷新失败。'
     }
   }
 }
 
+const retestReviewTicket = async (item) => {
+  const recordId = item.record_id
+  reviewRetesting[recordId] = true
+  statusMessage.value = '正在使用当前系统重新测试原问题...'
+
+  try {
+    const response = await fetch(apiUrl(`/api/admin/review/issues/${recordId}/retest`), {
+      method: 'POST',
+      headers: authHeaders(),
+    })
+    const data = await parseAdminResponse(response)
+    if (!data.success) {
+      statusMessage.value = data.message || '重新测试失败。'
+      return
+    }
+
+    reviewRetestResults[recordId] = data.data
+    delete reviewRetesting[recordId]
+    clearPageCache(adminCacheKey('issues'))
+    clearPageCache('analytics:summary')
+    await loadReviewIssues()
+    statusMessage.value = '重新测试完成，最新结果已保存。'
+  } catch (error) {
+    console.error(error)
+    if (!statusMessage.value) {
+      statusMessage.value = '重新测试失败，请检查后端服务是否正常运行。'
+    }
+  } finally {
+    delete reviewRetesting[recordId]
+  }
+}
+
 const updateReviewTicket = async (item, status) => {
-  const note = status === 'processed'
-    ? '管理员标记为已处理'
-    : '管理员标记为无效/无需处理'
+  const note = String(reviewNotes[item.record_id] || '').trim()
+  if (!note) {
+    statusMessage.value = '请先填写处理说明。'
+    return
+  }
   const originalStatus = item.review_status
   const originalNote = item.review_note
+  const originalNeedsReview = item.needs_review
 
   reviewUpdating[item.record_id] = status
   item.review_status = status
   item.review_note = note
   item.needs_review = false
-  statusMessage.value = status === 'processed' ? '工单已标记为已处理。' : '工单已标记为无效。'
+  statusMessage.value = status === 'processed'
+    ? '样本已标记为已处理。'
+    : '样本已忽略。'
 
   try {
     const response = await fetch(apiUrl(`/api/admin/review/issues/${item.record_id}/status`), {
@@ -1460,64 +1481,19 @@ const updateReviewTicket = async (item, status) => {
       clearPageCache(adminCacheKey('issues'))
       clearPageCache(adminCacheKey('history'))
       clearPageCache('analytics:summary')
+      await loadReviewIssues()
     }
   } catch (error) {
     console.error(error)
     item.review_status = originalStatus
     item.review_note = originalNote
-    item.needs_review = originalStatus !== 'processed' && originalStatus !== 'ignored'
+    item.needs_review = originalNeedsReview
     if (!statusMessage.value) {
-      statusMessage.value = '工单状态更新失败，请检查后端服务是否正常运行。'
+      statusMessage.value = '样本状态更新失败，请检查后端服务是否正常运行。'
     }
   } finally {
     delete reviewUpdating[item.record_id]
   }
-}
-
-const fillKnowledgeDraft = async (item, kind) => {
-  const keyword = item.keyword || '待补充条目'
-
-  if (kind === 'medicine') {
-    uploads.medicine.fileName = `${keyword}-medicine-draft.json`
-    uploads.medicine.content = JSON.stringify(
-      {
-        name: keyword,
-        type: '待补充药品类别',
-        usage: `根据用户问题补充：${item.question}`,
-        notice: '请根据药品说明书补充注意事项。',
-        contraindication: '请根据药品说明书补充禁忌人群。',
-        side_effect: '请根据药品说明书补充不良反应。',
-        source: '管理员根据低置信度样本补充',
-      },
-      null,
-      2,
-    )
-    uploads.medicine.message = '已生成药品库草稿，请核对说明书后写入。'
-    activeKnowledge.value = 'medicine'
-    statusMessage.value = '药品库草稿已生成，已定位到下方上传区域，请核对后写入。'
-    await scrollToUploadSection()
-    return
-  }
-
-  uploads.disease.fileName = `${keyword}-disease-draft.json`
-  uploads.disease.content = JSON.stringify(
-    {
-      name: keyword,
-      category: '待补充分类',
-      symptoms: ['待补充症状'],
-      description: `根据用户问题补充：${item.question}`,
-      care_advice: '请补充家庭护理和观察建议。',
-      medicine_notice: '请补充用药注意，避免直接替代医生诊断。',
-      warning: '请补充需要及时就医的危险信号。',
-      source: '管理员根据低置信度样本补充',
-    },
-    null,
-    2,
-  )
-  uploads.disease.message = '已生成疾病库草稿，请补全并核对后写入。'
-  activeKnowledge.value = 'disease'
-  statusMessage.value = '疾病知识草稿已生成，已定位到下方上传区域，请核对后写入。'
-  await scrollToUploadSection()
 }
 
 const uploadDoc = async (kind) => {
@@ -1678,31 +1654,13 @@ const rebuildIndex = async () => {
   }
 }
 
-const markError = async (recordId) => {
-  try {
-    const response = await fetch(apiUrl(`/api/admin/history/${recordId}/mark-error`), {
-      method: 'POST',
-      headers: authHeaders({
-        'Content-Type': 'application/json',
-      }),
-      body: JSON.stringify({
-        reason: errorReasons[recordId] || '',
-      }),
-    })
-
-    const data = await parseAdminResponse(response)
-    statusMessage.value = data.message
-    clearAdminDataCache()
-    await loadAdminData(true)
-  } catch (error) {
-    console.error(error)
-    statusMessage.value = '标记失败，请检查后端服务是否正常运行。'
+onMounted(async () => {
+  const requestedSection = String(route.query.section || '')
+  if (adminSections.some((section) => section.value === requestedSection)) {
+    activeAdminSection.value = requestedSection
   }
-}
-
-onMounted(() => {
   loadUser()
-  loadAdminData()
+  await loadAdminData()
 })
 
 watch(userSearch, () => resetPage('users'))
@@ -2281,11 +2239,13 @@ button:disabled {
 
 .issue-card {
   display: grid;
-  gap: 12px;
-  padding: 16px;
+  align-content: start;
+  gap: 14px;
+  padding: 18px;
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 8px;
+  box-shadow: var(--shadow-sm);
 }
 
 .issue-head {
@@ -2293,11 +2253,20 @@ button:disabled {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
 }
 
-.issue-head > div {
+.issue-title-block {
   display: grid;
   gap: 8px;
+  min-width: 0;
+}
+
+.issue-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .issue-head strong {
@@ -2367,17 +2336,101 @@ button:disabled {
   background: #f1f5f9;
 }
 
+.issue-section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: #f8fbfd;
+  border: 1px solid #e4edf3;
+  border-radius: 8px;
+}
+
+.issue-section-title {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
 .issue-question,
 .issue-fix {
+  margin: 0;
   color: var(--text-secondary);
   line-height: 1.7;
 }
 
-.issue-question {
+.issue-answer {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.issue-answer summary {
   padding: 10px 12px;
+  color: var(--medical-blue);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.issue-answer pre {
+  max-height: 260px;
+  margin: 0;
+  padding: 0 12px 12px;
+  overflow: auto;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  font-family: "Microsoft YaHei", Arial, sans-serif;
+  line-height: 1.7;
+}
+
+.retest-result {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
   background: #f8fbfd;
   border: 1px solid #e4edf3;
+  border-left: 4px solid var(--pharmacy-teal);
   border-radius: 8px;
+}
+
+.retest-result .mini-heading {
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e4edf3;
+}
+
+.retest-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.retest-metrics span,
+.retest-result p {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.retest-result pre {
+  max-height: 300px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  color: var(--text-primary);
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  font-family: "Microsoft YaHei", Arial, sans-serif;
+  line-height: 1.7;
+}
+
+.review-note-input {
+  width: 100%;
+  min-height: 64px;
+  margin: 0;
+  resize: vertical;
 }
 
 .issue-meta {
@@ -2401,8 +2454,23 @@ button:disabled {
   gap: 10px;
 }
 
-.draft-btn {
+.issue-actions button {
+  min-width: 108px;
+}
+
+.retest-btn {
   background: var(--pharmacy-teal);
+}
+
+.issue-notes {
+  display: grid;
+  gap: 8px;
+}
+
+.issue-notes .feedback-note {
+  margin-top: 0;
+  background: #ffffff;
+  border-color: var(--border);
 }
 
 .ghost-btn {

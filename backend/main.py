@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -23,10 +25,14 @@ from rag_service import (
 from database_context_service import search_database_context
 from history_service import (
     add_history_record,
+    get_history_by_id,
     get_history_list,
     get_review_issue_list,
+    infer_history_confidence,
+    max_doc_score,
     clear_history_records,
     mark_history_error,
+    set_review_retest_result,
     set_review_ticket_status,
     set_history_feedback
 )
@@ -146,6 +152,110 @@ def enrich_medicine_context(data: dict, user: dict | None = None):
         },
     ]
     return data
+
+
+def _doc_refs_for_retest(docs):
+    refs = []
+    for doc in docs or []:
+        if not isinstance(doc, dict):
+            continue
+        title = str(doc.get("title") or "").strip()
+        if not title:
+            continue
+        refs.append({
+            "title": title,
+            "doc_type": str(doc.get("doc_type") or doc.get("type") or "").strip(),
+        })
+    return refs
+
+
+def _message_to_retest_history(message):
+    item = {
+        "role": str(message.get("role") or "user").strip() or "user",
+        "content": str(message.get("content") or "").strip(),
+    }
+    if item["role"] == "assistant":
+        trace = message.get("trace") if isinstance(message.get("trace"), dict) else {}
+        current_topic = str(trace.get("current_topic") or "").strip()
+        docs = _doc_refs_for_retest(message.get("retrieved_docs") or [])
+        if current_topic:
+            item["current_topic"] = current_topic
+        if docs:
+            item["docs"] = docs
+    return item
+
+
+def build_review_retest_history(record, context_limit=6):
+    """
+    Build the same short history shape used by /api/agent/chat, but only from
+    messages before the reviewed user question so the retest does not peek ahead.
+    """
+    record_id = record.get("id")
+    session_id = record.get("session_id")
+    agent_meta = record.get("agent_meta") or {}
+    fallback_topic = str(agent_meta.get("current_topic") or "").strip()
+
+    fallback_history = []
+    if fallback_topic:
+        fallback_history.append({
+            "role": "assistant",
+            "content": f"当前药品：{fallback_topic}",
+            "current_topic": fallback_topic,
+            "docs": [{"title": fallback_topic, "doc_type": "medicine"}],
+        })
+
+    if not session_id:
+        return fallback_history, {
+            "source": "fallback_topic" if fallback_history else "single_question",
+            "session_id": None,
+            "used_count": len(fallback_history),
+        }
+
+    detail = get_session_detail(session_id, allow_any_user=True)
+    messages = (detail or {}).get("messages") or []
+    target_index = None
+
+    for index, message in enumerate(messages):
+        if message.get("role") == "assistant" and message.get("history_id") == record_id:
+            target_index = max(0, index - 1)
+            break
+
+    if target_index is None:
+        question = str(record.get("question") or "").strip()
+        for index, message in enumerate(messages):
+            content = str(message.get("content") or "").strip()
+            if message.get("role") == "user" and question and content == question:
+                target_index = index
+                break
+
+    if target_index is None:
+        return fallback_history, {
+            "source": "fallback_topic" if fallback_history else "single_question",
+            "session_id": session_id,
+            "used_count": len(fallback_history),
+        }
+
+    history = [
+        _message_to_retest_history(message)
+        for message in messages[:target_index][-context_limit:]
+    ]
+    history = [
+        item for item in history
+        if item.get("content") or item.get("current_topic") or item.get("docs")
+    ]
+
+    if history:
+        return history, {
+            "source": "session",
+            "session_id": session_id,
+            "used_count": len(history),
+        }
+
+    return fallback_history, {
+        "source": "fallback_topic" if fallback_history else "single_question",
+        "session_id": session_id,
+        "used_count": len(fallback_history),
+    }
 
 
 @app.get("/")
@@ -686,6 +796,57 @@ def admin_review_issue_status(record_id: int, data: dict, _admin: dict = Depends
     }
 
 
+@app.post("/api/admin/review/issues/{record_id}/retest")
+def admin_review_issue_retest(record_id: int, _admin: dict = Depends(require_admin)):
+    """使用当前 Agent 只读复测历史问题，不写入历史、会话或统计。"""
+    record = get_history_by_id(record_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="未找到对应问答记录")
+
+    agent_meta = record.get("agent_meta") or {}
+    history, context_meta = build_review_retest_history(record)
+    response = run_agent(
+        {
+            "text": record.get("question", ""),
+            "input_type": "text",
+            "history": history,
+        },
+        persist=False,
+    )
+    reliability = response.get("reliability") or (response.get("agent_trace") or {}).get("reliability") or {}
+    current_docs = response.get("retrieved_docs") or []
+    retest_data = {
+        "record_id": record_id,
+        "question": record.get("question", ""),
+        "retested_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "context": context_meta,
+        "previous": {
+            "action": agent_meta.get("action", ""),
+            "confidence": infer_history_confidence(record),
+            "retrieved_count": len(record.get("retrieved_docs") or []),
+            "top_score": round(max_doc_score(record.get("retrieved_docs") or []), 3),
+        },
+        "current": {
+            "action": response.get("action", ""),
+            "intent": response.get("intent") or (response.get("agent_trace") or {}).get("intent", ""),
+            "confidence": reliability.get("final_score", (response.get("agent_trace") or {}).get("confidence", 0)),
+            "retrieved_count": len(current_docs),
+            "top_score": round(max_doc_score(current_docs), 3),
+            "retrieved_titles": [doc.get("title", "") for doc in current_docs if doc.get("title")],
+            "answer": response.get("answer", ""),
+            "is_danger": bool(response.get("is_danger")),
+            "llm": response.get("llm"),
+        },
+    }
+    set_review_retest_result(record_id, retest_data)
+
+    return {
+        "success": bool(response.get("success")),
+        "message": "重新测试完成，最新结果已保存",
+        "data": retest_data,
+    }
+
+
 @app.post("/api/admin/history/{record_id}/mark-error")
 def admin_mark_history_error(record_id: int, data: dict, _admin: dict = Depends(require_admin)):
     """
@@ -1040,7 +1201,7 @@ def history_feedback(record_id: int, data: dict, user: dict = Depends(optional_u
 
 
 @app.get("/api/analytics/summary")
-def analytics_summary(deep_recheck: bool = False):
+def analytics_summary(deep_recheck: bool = False, _admin: dict = Depends(require_admin)):
     """
     可视化分析数据接口。
     """

@@ -5,7 +5,7 @@
         <p class="eyebrow">DATA COMMAND CENTER</p>
         <h2>数据分析</h2>
         <p>
-          把问答、RAG、Agent 调度、知识库缺口和风险提醒拆成不同视角，先看结论，再进入细节。
+          所有使用量和质量比例统一基于同一批问答样本。{{ scopeText }}
         </p>
       </div>
 
@@ -14,7 +14,7 @@
           {{ loading ? '刷新中...' : '刷新历史统计' }}
         </button>
         <button type="button" class="secondary-action" @click="loadAnalytics(true, true)" :disabled="loading">
-          使用当前知识库重新诊断
+          使用当前知识库重新检索
         </button>
       </div>
     </section>
@@ -116,6 +116,7 @@
             <p class="eyebrow">QUESTION MAP</p>
             <h3>用户关注词云</h3>
           </div>
+          <span>仅统计用户原始文字中的症状、药品和风险关键词。</span>
         </div>
 
         <div v-if="analytics.word_cloud.length" class="word-cloud">
@@ -134,7 +135,7 @@
             <p class="eyebrow">SYMPTOMS</p>
             <h3>症状提问排行</h3>
           </div>
-          <span>用横向条形图保留比较关系，比堆很多数字更容易扫读。</span>
+          <span>统计当前肯定症状，同一会话重复提及同一症状只计一次。</span>
         </div>
 
         <div v-if="analytics.symptom_stats.length" class="bar-list">
@@ -152,28 +153,32 @@
       <article class="panel">
         <div class="section-title compact">
           <div>
-            <p class="eyebrow">DISEASES</p>
-            <h3>高频疾病</h3>
+            <p class="eyebrow">RAG RETRIEVAL</p>
+            <h3>RAG 疾病召回排行</h3>
           </div>
         </div>
+
+        <p class="panel-note">统计历史回答中疾病知识被 RAG 引用的次数，不代表诊断结果或患病人数。</p>
 
         <div v-if="analytics.disease_stats.length" class="rank-list">
           <div v-for="(item, index) in analytics.disease_stats" :key="item.name" class="rank-item">
             <span>{{ index + 1 }}</span>
             <strong>{{ item.name }}</strong>
-            <i>{{ item.count }} 次</i>
+            <i>召回 {{ item.count }} 次</i>
           </div>
         </div>
-        <p v-else class="empty-state">暂无疾病检索记录。</p>
+        <p v-else class="empty-state">暂无疾病知识召回记录。</p>
       </article>
 
       <article class="panel">
         <div class="section-title compact">
           <div>
             <p class="eyebrow">MEDICINES</p>
-            <h3>高频药品</h3>
+            <h3>药品咨询排行</h3>
           </div>
         </div>
+
+        <p class="panel-note">统计用户明确咨询并成功匹配的药品，同一会话重复咨询同一药品只计一次。</p>
 
         <div v-if="analytics.medicine_stats.length" class="rank-list">
           <div v-for="(item, index) in analytics.medicine_stats" :key="item.name" class="rank-item medicine">
@@ -239,162 +244,82 @@
             <strong>{{ analytics.rag_quality.no_retrieval_count }}</strong>
           </div>
         </div>
+        <p class="panel-note">仅统计实际进入 RAG 症状问答流程的样本，不包含药品查询、追问和危险提醒。</p>
       </article>
 
       <article class="panel">
-        <div class="section-title compact">
+        <div class="section-title compact review-title">
           <div>
             <p class="eyebrow">REVIEW</p>
-            <h3>待复核回答</h3>
+            <h3>审核状态</h3>
           </div>
+          <RouterLink class="review-entry" to="/admin?section=review">查看复核样本</RouterLink>
         </div>
 
-        <div v-if="analytics.review_suggestions.length" class="case-list">
-          <div v-for="item in analytics.review_suggestions.slice(0, 6)" :key="item.record_id" class="case-item">
-            <b>{{ item.issue_type || item.keyword || '待复核' }}</b>
-            <p>{{ item.question }}</p>
-            <small>{{ item.action_label }} · 可靠性 {{ formatPercent(item.confidence) }} · 召回 {{ item.current_retrieved_count }}</small>
+        <div class="metric-stack">
+          <div>
+            <span>待管理员处理</span>
+            <strong>{{ analytics.quality_overview.current_unresolved_count }}</strong>
+          </div>
+          <div>
+            <span>低置信回答</span>
+            <strong>{{ analytics.quality_overview.low_confidence_count }}</strong>
+          </div>
+          <div>
+            <span>药品知识缺口</span>
+            <strong>{{ analytics.quality_overview.medicine_gap_count }}</strong>
           </div>
         </div>
-        <p v-else class="empty-state">暂无需要优先复核的回答。</p>
+        <p class="panel-note">这里只展示数量，具体问题、完整回答和处理操作统一放在复核样本页面。</p>
       </article>
     </section>
 
-    <section v-if="activeSection === 'knowledge'" class="section-grid">
-      <article class="panel">
-        <div class="section-title compact">
-          <div>
-            <p class="eyebrow">KNOWLEDGE MIX</p>
-            <h3>知识库结构</h3>
-          </div>
-        </div>
-
-        <div class="split-meter">
-          <i class="disease" :style="{ width: ratioWidth(diseaseKnowledgeRatio) }"></i>
-          <i class="medicine" :style="{ width: ratioWidth(medicineKnowledgeRatio) }"></i>
-        </div>
-        <div class="metric-stack">
-          <div>
-            <span>疾病知识</span>
-            <strong>{{ analytics.overview.disease_count }} 条</strong>
-          </div>
-          <div>
-            <span>药品说明</span>
-            <strong>{{ analytics.overview.medicine_count }} 条</strong>
-          </div>
-          <div>
-            <span>知识总量</span>
-            <strong>{{ knowledgeTotal }} 条</strong>
-          </div>
-        </div>
-      </article>
-
+    <section v-if="activeSection === 'agent' && isCurrentRecheck" class="section-grid">
       <article class="panel wide">
-        <div class="section-title">
-          <div>
-            <p class="eyebrow">GAPS</p>
-            <h3>知识库待补充建议</h3>
-          </div>
-          <span>优先补出现次数多、低召回、药品缺口明显的内容。</span>
-        </div>
-
-        <div v-if="analytics.knowledge_gaps.length" class="gap-list">
-          <div v-for="item in analytics.knowledge_gaps" :key="`${item.keyword}-${item.gap_type}`" class="gap-item">
-            <div>
-              <b>{{ item.keyword }}</b>
-              <span>{{ item.gap_type }} · {{ item.count }} 次</span>
-            </div>
-            <p>{{ item.suggested_action || '建议补充对应疾病知识、药品说明或问答样例。' }}</p>
-            <small v-if="item.examples?.length">示例：{{ item.examples.join(' / ') }}</small>
-          </div>
-        </div>
-        <p v-else class="empty-state">当前没有明显知识库缺口。</p>
-      </article>
-
-      <article class="panel">
         <div class="section-title compact">
           <div>
             <p class="eyebrow">IMPROVED</p>
-            <h3>{{ isCurrentRecheck ? '已改善样本' : '历史样本复测待执行' }}</h3>
+            <h3>{{ isCurrentRecheck ? '召回已改善样本' : '历史异常尚未重新检索' }}</h3>
           </div>
         </div>
 
         <div v-if="analytics.improved_cases.length" class="case-list">
           <div v-for="item in analytics.improved_cases.slice(0, 6)" :key="item.record_id" class="case-item improved">
-            <b>{{ item.keyword }}</b>
+            <div class="improvement-head">
+              <b>{{ item.keyword }}</b>
+              <span>{{ item.status_label }}</span>
+            </div>
             <p>{{ item.question }}</p>
-            <small>{{ item.status_label }}</small>
+            <div class="improvement-comparison">
+              <span>
+                最高匹配分
+                <strong>{{ formatScore(item.previous_top_score) }}</strong>
+                →
+                <strong>{{ formatScore(item.current_top_score) }}</strong>
+                <i>({{ formatSignedScore(item.score_change) }})</i>
+              </span>
+              <span>
+                召回条目
+                <strong>{{ item.previous_retrieved_count }}</strong>
+                →
+                <strong>{{ item.current_retrieved_count }}</strong>
+              </span>
+            </div>
+            <p v-if="item.added_titles?.length" class="retrieval-change added">
+              新增召回：{{ item.added_titles.join('、') }}
+            </p>
+            <p v-if="item.removed_titles?.length" class="retrieval-change removed">
+              不再召回：{{ item.removed_titles.join('、') }}
+            </p>
+            <p v-if="!item.added_titles?.length && !item.removed_titles?.length" class="retrieval-change">
+              召回条目没有变化，主要改善来自匹配分提高。
+            </p>
+            <small>这里只表示知识检索结果改善，原回答和复核样本不会自动变更。</small>
           </div>
         </div>
         <p v-else class="empty-state">
-          {{ isCurrentRecheck ? '暂无已改善记录。' : '点击“使用当前知识库重新诊断”后查看改善结果。' }}
+          {{ isCurrentRecheck ? '暂无召回已改善记录。' : '点击“使用当前知识库重新检索”后查看结果。' }}
         </p>
-      </article>
-    </section>
-
-    <section v-if="activeSection === 'risk'" class="section-grid">
-      <article class="panel wide">
-        <div class="section-title">
-          <div>
-            <p class="eyebrow">RISK & MEDICINE</p>
-            <h3>风险与用药观察</h3>
-          </div>
-          <span>这部分适合答辩展示系统的安全提醒、药品查询和知识库扩充方向。</span>
-        </div>
-
-        <div class="risk-summary">
-          <article>
-            <span>高风险提醒占比</span>
-            <strong>{{ formatPercent(warningRatio) }}</strong>
-            <p>{{ analytics.overview.warning_count }} 次高风险提醒</p>
-          </article>
-          <article>
-            <span>药品查询占比</span>
-            <strong>{{ formatPercent(medicineSearchRatio) }}</strong>
-            <p>{{ analytics.overview.medicine_search_count }} 次药品查询</p>
-          </article>
-          <article>
-            <span>RAG 召回覆盖</span>
-            <strong>{{ formatPercent(retrievalCoverage) }}</strong>
-            <p>{{ analytics.rag_quality.no_retrieval_count }} 次无召回</p>
-          </article>
-        </div>
-      </article>
-
-      <article class="panel">
-        <div class="section-title compact">
-          <div>
-            <p class="eyebrow">MEDICINE GAP</p>
-            <h3>药品库缺口</h3>
-          </div>
-        </div>
-
-        <div v-if="analytics.medicine_gap_stats.length" class="case-list">
-          <div v-for="item in analytics.medicine_gap_stats" :key="item.record_id" class="case-item">
-            <b>{{ item.keyword || '待补充药品' }}</b>
-            <p>{{ item.question }}</p>
-            <small>{{ item.issue_type }} · 可靠性 {{ formatPercent(item.confidence) }}</small>
-          </div>
-        </div>
-        <p v-else class="empty-state">暂无明显药品库缺口。</p>
-      </article>
-
-      <article class="panel">
-        <div class="section-title compact">
-          <div>
-            <p class="eyebrow">LOW CONFIDENCE</p>
-            <h3>低置信样本</h3>
-          </div>
-        </div>
-
-        <div v-if="analytics.low_confidence_cases.length" class="case-list">
-          <div v-for="item in analytics.low_confidence_cases" :key="item.record_id" class="case-item">
-            <b>{{ item.keyword || item.issue_type || '低置信回答' }}</b>
-            <p>{{ item.question }}</p>
-            <small>{{ item.action_label }} · 可靠性 {{ formatPercent(item.confidence) }}</small>
-          </div>
-        </div>
-        <p v-else class="empty-state">暂无低置信样本。</p>
       </article>
     </section>
   </div>
@@ -410,10 +335,8 @@ const activeSection = ref('overview')
 
 const analyticsSections = [
   { label: '总览', value: 'overview' },
-  { label: '问答趋势', value: 'questions' },
-  { label: 'Agent 质量', value: 'agent' },
-  { label: '知识库缺口', value: 'knowledge' },
-  { label: '风险与用药', value: 'risk' },
+  { label: '用户需求', value: 'questions' },
+  { label: '质量监控', value: 'agent' },
 ]
 
 const sectionMeta = {
@@ -433,19 +356,7 @@ const sectionMeta = {
     eyebrow: 'AGENT QUALITY',
     title: '看 Agent 调度是否可靠',
     description: '重点观察低置信、无召回、工具调用分布，定位回答变笨或检索失败的原因。',
-    points: ['调度分布', 'RAG 质量', '待复核回答'],
-  },
-  knowledge: {
-    eyebrow: 'KNOWLEDGE OPS',
-    title: '看知识库哪里需要补',
-    description: '把缺口、已改善样本和知识结构放在一起，方便管理员形成补充计划。',
-    points: ['知识结构', '缺口建议', '已改善样本'],
-  },
-  risk: {
-    eyebrow: 'SAFETY VIEW',
-    title: '看风险提醒和用药需求',
-    description: '这个分区适合展示系统的医疗安全价值，包括高风险提醒、药品库缺口和低置信样本。',
-    points: ['高风险提醒', '药品缺口', '低置信样本'],
+    points: ['调度分布', 'RAG 质量', '审核状态'],
   },
 }
 
@@ -453,6 +364,12 @@ const activeSectionMeta = computed(() => sectionMeta[activeSection.value] || sec
 
 const analytics = ref({
   analysis_mode: 'historical_snapshot',
+  scope: {
+    history_limit: 200,
+    sample_count: 0,
+    start_time: '',
+    end_time: '',
+  },
   overview: {
     total_questions: 0,
     warning_count: 0,
@@ -493,6 +410,15 @@ const analytics = ref({
 
 const isCurrentRecheck = computed(() => analytics.value.analysis_mode === 'current_recheck')
 
+const scopeText = computed(() => {
+  const scope = analytics.value.scope || {}
+  const count = safeNumber(scope.sample_count)
+  const start = String(scope.start_time || '').slice(0, 10)
+  const end = String(scope.end_time || '').slice(0, 10)
+  const dateRange = start && end ? `，时间 ${start} 至 ${end}` : ''
+  return `当前统计最近 ${count} 条问答${dateRange}。`
+})
+
 const safeNumber = (value) => {
   const number = Number(value || 0)
   return Number.isFinite(number) ? number : 0
@@ -523,21 +449,11 @@ const warningRatio = computed(() => safeDivide(analytics.value.overview.warning_
 
 const medicineSearchRatio = computed(() => safeDivide(analytics.value.overview.medicine_search_count, analytics.value.overview.total_questions))
 
-const retrievalCoverage = computed(() => {
-  const total = safeNumber(analytics.value.rag_quality.total_cases)
-  const noRetrieval = safeNumber(analytics.value.rag_quality.no_retrieval_count)
-  return total ? 1 - safeDivide(noRetrieval, total) : 0
-})
-
-const diseaseKnowledgeRatio = computed(() => safeDivide(analytics.value.overview.disease_count, knowledgeTotal.value))
-
-const medicineKnowledgeRatio = computed(() => safeDivide(analytics.value.overview.medicine_count, knowledgeTotal.value))
-
 const overviewCards = computed(() => [
   {
-    label: '用户提问',
+    label: '问答样本',
     value: analytics.value.overview.total_questions,
-    hint: '历史问答总量',
+    hint: `最近最多 ${analytics.value.scope?.history_limit || 200} 条`,
     tone: 'primary',
   },
   {
@@ -629,6 +545,13 @@ const formatPercent = (value) => {
   return `${Math.round(number * 100)}%`
 }
 
+const formatScore = (value) => safeNumber(value).toFixed(3)
+
+const formatSignedScore = (value) => {
+  const number = safeNumber(value)
+  return `${number >= 0 ? '+' : ''}${number.toFixed(3)}`
+}
+
 const riskColor = (name = '') => {
   if (name.includes('高风险') || name.includes('楂橀')) return 'var(--danger)'
   if (name.includes('不足') || name.includes('无召回') || name.includes('涓嶈冻') || name.includes('鏃犲彫')) {
@@ -672,16 +595,27 @@ const loadAnalytics = async (force = false, deepRecheck = false) => {
     const path = deepRecheck ? '/api/analytics/summary?deep_recheck=true' : '/api/analytics/summary'
     analytics.value = await cachedGetJson(cacheKey, path, {
       force,
-      timeoutMs: deepRecheck ? 45000 : 8000,
+      timeoutMs: deepRecheck ? 45000 : 15000,
+      fetchOptions: {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('ragToken') || ''}`,
+        },
+      },
     })
     message.value = deepRecheck
-      ? '已使用当前知识库重新诊断历史异常样本。'
+      ? '已使用当前知识库重新检索历史异常样本；结果只表示召回变化，不代表回答已经通过医学复核。'
       : ''
   } catch (error) {
-    console.error(error)
-    message.value = error?.name === 'AbortError'
-      ? '分析数据加载超时，请稍后刷新。'
-      : '分析数据加载失败，请检查后端服务是否正常运行。'
+    if (error?.message?.includes('403')) {
+      message.value = '管理员登录已失效或权限不足，请重新登录。'
+    } else {
+      if (error?.name !== 'AbortError') {
+        console.error(error)
+      }
+      message.value = error?.name === 'AbortError'
+        ? '分析数据加载超时，请稍后刷新。'
+        : '分析数据加载失败，请检查后端服务是否正常运行。'
+    }
   } finally {
     loading.value = false
   }
@@ -720,6 +654,20 @@ onMounted(() => {
   color: var(--medical-blue);
   background: #eff6ff;
   border-color: #bfdbfe;
+}
+
+.review-entry {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 11px;
+  color: var(--medical-blue);
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 900;
+  text-decoration: none;
 }
 
 .analytics-hero {
@@ -949,6 +897,13 @@ button:disabled {
 
 .section-title.compact {
   margin-bottom: 14px;
+}
+
+.panel-note {
+  margin: -4px 0 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.65;
 }
 
 .signal-grid,
@@ -1263,6 +1218,57 @@ button:disabled {
 .case-item.improved {
   background: #f0fdf4;
   border-color: #bbf7d0;
+}
+
+.improvement-head,
+.improvement-comparison {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 18px;
+}
+
+.improvement-head span {
+  color: #166534;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.improvement-comparison {
+  justify-content: flex-start;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid #d1fae5;
+  border-radius: 8px;
+}
+
+.improvement-comparison span {
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.improvement-comparison strong {
+  margin: 0 4px;
+  color: var(--text-primary);
+}
+
+.improvement-comparison i {
+  color: #166534;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.retrieval-change {
+  font-size: 13px;
+}
+
+.retrieval-change.added {
+  color: #166534;
+}
+
+.retrieval-change.removed {
+  color: #9a3412;
 }
 
 .empty-state {
